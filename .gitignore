@@ -1,0 +1,9 @@
+bin/
+data/
+tmp/
+var/
+venv/
+/.claude
+/.shellRcBackups
+/certs
+/site
