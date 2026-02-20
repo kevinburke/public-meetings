@@ -111,6 +111,7 @@ func (c *YouTubeClient) ResolveChannelID(ctx context.Context, handle string) (st
 // SearchRecentVideos searches for recent videos on a channel.
 // publishedAfter limits results to videos published after this time.
 // If zero, returns the most recent videos.
+// Automatically paginates through all results.
 func (c *YouTubeClient) SearchRecentVideos(ctx context.Context, channelID string, publishedAfter time.Time) ([]youtubeSearchItem, error) {
 	params := url.Values{
 		"part":       {"snippet"},
@@ -124,17 +125,26 @@ func (c *YouTubeClient) SearchRecentVideos(ctx context.Context, channelID string
 		params.Set("publishedAfter", publishedAfter.Format(time.RFC3339))
 	}
 
-	reqURL := youtubeAPIBase + "/search?" + params.Encode()
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
-	if err != nil {
-		return nil, err
-	}
+	var allItems []youtubeSearchItem
+	for {
+		reqURL := youtubeAPIBase + "/search?" + params.Encode()
+		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+		if err != nil {
+			return nil, err
+		}
 
-	var resp youtubeSearchResponse
-	if err := c.doJSON(req, &resp); err != nil {
-		return nil, fmt.Errorf("searching channel videos: %w", err)
+		var resp youtubeSearchResponse
+		if err := c.doJSON(req, &resp); err != nil {
+			return nil, fmt.Errorf("searching channel videos: %w", err)
+		}
+		allItems = append(allItems, resp.Items...)
+
+		if resp.NextPageToken == "" {
+			break
+		}
+		params.Set("pageToken", resp.NextPageToken)
 	}
-	return resp.Items, nil
+	return allItems, nil
 }
 
 // GetVideoDetails fetches detailed info for a video, including
@@ -233,7 +243,7 @@ func CheckForNewMeetings(ctx context.Context, yt *YouTubeClient, channelID strin
 			meetingDate = time.Date(pacific.Year(), pacific.Month(), pacific.Day(), 0, 0, 0, 0, time.UTC)
 		}
 
-		session := sessionFromTitle(item.Snippet.Title)
+		session := sessionFromTitle(item.Snippet.Title, body)
 		m := &Meeting{
 			ID:          MeetingID(meetingDate, body, session),
 			Date:        meetingDate,

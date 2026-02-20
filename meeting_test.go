@@ -35,19 +35,28 @@ func TestParseWhisperTS(t *testing.T) {
 func TestSessionFromTitle(t *testing.T) {
 	tests := []struct {
 		title string
+		body  MeetingBody
 		want  string
 	}{
-		{"Walnut Creek City Council: 2/3/26", ""},
-		{"Walnut Creek City Council: Closed session - 2/2/2026", "closed-session"},
-		{"Walnut Creek City Council: Special meeting - 2/5/2026", "special-meeting"},
-		{"Walnut Creek Planning Commission: 2-12-26", ""},
-		{"Walnut Creek City Council: Budget workshop - 3/1/26", "budget-workshop"},
-		{"No colon here 2/3/26", ""},
+		{"Walnut Creek City Council: 2/3/26", CityCouncil, ""},
+		{"Walnut Creek City Council: Closed session - 2/2/2026", CityCouncil, "closed-session"},
+		{"Walnut Creek City Council: Special meeting - 2/5/2026", CityCouncil, "special-meeting"},
+		{"Walnut Creek Planning Commission: 2-12-26", PlanningCommission, ""},
+		{"Walnut Creek City Council: Budget workshop - 3/1/26", CityCouncil, "budget-workshop"},
+		{"No colon here 2/3/26", CityCouncil, ""},
+		// Session qualifier before the colon
+		{"Walnut Creek City Council Special Meeting: 1/20/2026", CityCouncil, "special-meeting"},
+		{"Walnut Creek City Council Special Meeting: 9/2/2025", CityCouncil, "special-meeting"},
+		{"Walnut Creek City Council Special Meeting: 12/16/2025", CityCouncil, "special-meeting"},
+		// No colon, no numeric date
+		{"2025 Walnut Creek City Council Holiday Greetings", CityCouncil, "holiday-greetings"},
+		// Design review with session before colon
+		{"Design Review Commission- Special Meeting: October 22, 2025", DesignReviewCommission, "special-meeting"},
 	}
 	for _, tt := range tests {
-		got := sessionFromTitle(tt.title)
+		got := sessionFromTitle(tt.title, tt.body)
 		if got != tt.want {
-			t.Errorf("sessionFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
+			t.Errorf("sessionFromTitle(%q, %q) = %q, want %q", tt.title, tt.body, got, tt.want)
 		}
 	}
 }

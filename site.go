@@ -30,6 +30,7 @@ h2 { margin-top: 2em; }
 .body-city-council { background: #e3f2fd; color: #1565c0; }
 .body-planning-commission { background: #e8f5e9; color: #2e7d32; }
 .body-design-review-commission { background: #fff3e0; color: #e65100; }
+.body-transportation-commission { background: #f3e5f5; color: #6a1b9a; }
 .meeting-summary { color: #555; font-size: 0.9em; margin-top: 4px; }
 </style>
 </head>
@@ -69,7 +70,7 @@ a { color: #0066cc; }
 .back-link { margin-bottom: 1em; }
 h1 { font-size: 1.5em; }
 .video-sticky { position: sticky; top: 0; z-index: 10; background: #fff; padding-bottom: 10px; }
-.video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; }
+.video-container { position: relative; width: 100%; max-width: 480px; aspect-ratio: 16 / 9; }
 .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 .agenda-link { margin: 1em 0; padding: 10px 15px; background: #f5f5f5; border-radius: 5px; display: inline-block; }
 .transcript { margin-top: 2em; }
@@ -85,7 +86,7 @@ h1 { font-size: 1.5em; }
 .agenda-docs summary { cursor: pointer; color: #0066cc; font-size: 0.9em; }
 .agenda-docs ul { margin: 6px 0 0; padding-left: 1.5em; font-size: 0.9em; }
 .agenda-docs li { padding: 2px 0; }
-.section-header { margin: 1.5em 0 0.5em; padding: 8px 12px; background: #e3f2fd; border-left: 4px solid #1565c0; border-radius: 0 4px 4px 0; font-weight: 600; font-size: 1.05em; scroll-margin-top: 400px; }
+.section-header { margin: 1.5em 0 0.5em; padding: 8px 12px; background: #e3f2fd; border-left: 4px solid #1565c0; border-radius: 0 4px 4px 0; font-weight: 600; font-size: 1.05em; scroll-margin-top: 290px; }
 .cue { padding: 4px 0; display: flex; gap: 12px; border-bottom: 1px solid #f0f0f0; }
 .cue:hover { background: #f9f9f9; }
 .cue-time { flex-shrink: 0; width: 80px; color: #0066cc; cursor: pointer; font-family: monospace; font-size: 0.9em; padding-top: 2px; }
@@ -431,7 +432,7 @@ func generateMeetingPage(outDir string, m *Meeting) error {
 }
 
 func generateIndexPage(outDir string, meetings []*Meeting) error {
-	bodyOrder := []MeetingBody{CityCouncil, PlanningCommission, DesignReviewCommission}
+	bodyOrder := []MeetingBody{CityCouncil, PlanningCommission, DesignReviewCommission, TransportationCommission}
 	grouped := make(map[MeetingBody][]indexMeetingData)
 
 	for _, m := range meetings {

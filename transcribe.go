@@ -151,6 +151,11 @@ func TranscribeAudio(ctx context.Context, cfg *Config, meeting *Meeting) error {
 		"--language", "en",
 		"--output-format", "vtt",
 		"--output-dir", transcriptDir,
+		// Disable conditioning on previous text to prevent hallucination
+		// loops where Whisper gets stuck repeating "MUSIC" or similar for
+		// the entire file. The tradeoff is slightly less consistent text
+		// across windows, but it prevents complete transcription failures.
+		"--condition-on-previous-text", "False",
 	}
 	cmd := exec.CommandContext(ctx, whisperPath, args...)
 	// Force Python to use unbuffered stdout/stderr so we see progress

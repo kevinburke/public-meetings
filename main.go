@@ -115,7 +115,7 @@ func loadConfigAndDB() (*Config, *Database) {
 // runCheck checks for new videos once and exits.
 func runCheck(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
-	lookbackDays := fs.Int("lookback-days", 14, "How many days back to search for videos")
+	lookbackDays := fs.Int("lookback-days", 180, "How many days back to search for videos")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: walnut-creek-meetings check [flags]
 

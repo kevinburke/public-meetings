@@ -36,9 +36,10 @@ type rssFeed struct {
 
 // bodyKeywords maps MeetingBody to keywords to look for in RSS item titles.
 var bodyKeywords = map[MeetingBody]string{
-	CityCouncil:            "city council",
-	PlanningCommission:     "planning commission",
-	DesignReviewCommission: "design review commission",
+	CityCouncil:              "city council",
+	PlanningCommission:       "planning commission",
+	DesignReviewCommission:   "design review commission",
+	TransportationCommission: "transportation commission",
 }
 
 // AgendaDocument is a link to a document attached to an agenda item.

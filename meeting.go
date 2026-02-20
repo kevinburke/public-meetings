@@ -17,15 +17,17 @@ import (
 type MeetingBody string
 
 const (
-	CityCouncil            MeetingBody = "city-council"
-	PlanningCommission     MeetingBody = "planning-commission"
-	DesignReviewCommission MeetingBody = "design-review-commission"
+	CityCouncil              MeetingBody = "city-council"
+	PlanningCommission       MeetingBody = "planning-commission"
+	DesignReviewCommission   MeetingBody = "design-review-commission"
+	TransportationCommission MeetingBody = "transportation-commission"
 )
 
 var allBodies = []MeetingBody{
 	CityCouncil,
 	PlanningCommission,
 	DesignReviewCommission,
+	TransportationCommission,
 }
 
 func (b MeetingBody) DisplayName() string {
@@ -36,6 +38,8 @@ func (b MeetingBody) DisplayName() string {
 		return "Planning Commission"
 	case DesignReviewCommission:
 		return "Design Review Commission"
+	case TransportationCommission:
+		return "Transportation Commission"
 	}
 	return string(b)
 }
@@ -78,22 +82,74 @@ func classifyVideo(title string) MeetingBody {
 		return DesignReviewCommission
 	case strings.Contains(lower, "planning commission"):
 		return PlanningCommission
+	case strings.Contains(lower, "transportation commission"):
+		return TransportationCommission
 	case strings.Contains(lower, "city council"):
 		return CityCouncil
 	}
 	return ""
 }
 
-// sessionFromTitle extracts a session qualifier from the video title by taking
-// any text between the colon (after the body name) and the date, then
-// slugifying it. For example:
+// sessionFromTitle extracts a session qualifier from the video title by
+// checking two positions and slugifying the result:
 //
-//	"Walnut Creek City Council: 2/3/26"                     → ""
-//	"Walnut Creek City Council: Closed session - 2/2/2026"  → "closed-session"
-//	"Walnut Creek City Council: Special meeting - 2/5/2026" → "special-meeting"
+//  1. Text between the body name and the colon (e.g., "City Council Special Meeting: 1/20/2026")
+//  2. Text between the colon and the date (e.g., "City Council: Closed session - 2/2/2026")
+//
+// Examples:
+//
+//	"Walnut Creek City Council: 2/3/26"                      → ""
+//	"Walnut Creek City Council: Closed session - 2/2/2026"   → "closed-session"
+//	"Walnut Creek City Council Special Meeting: 1/20/2026"   → "special-meeting"
+//	"2025 Walnut Creek City Council Holiday Greetings"        → "holiday-greetings"
 //
 // Returns empty string if there's no qualifier.
-func sessionFromTitle(title string) string {
+func sessionFromTitle(title string, body MeetingBody) string {
+	lower := strings.ToLower(title)
+
+	// Map body to the keyword used to identify it in the title.
+	var bodyKeyword string
+	switch body {
+	case CityCouncil:
+		bodyKeyword = "city council"
+	case PlanningCommission:
+		bodyKeyword = "planning commission"
+	case DesignReviewCommission:
+		bodyKeyword = "design review commission"
+	case TransportationCommission:
+		bodyKeyword = "transportation commission"
+	}
+
+	// Check for session text between the body name and the first colon.
+	// This handles titles like "City Council Special Meeting: 1/20/2026".
+	if bodyKeyword != "" {
+		if idx := strings.Index(lower, bodyKeyword); idx >= 0 {
+			afterBody := title[idx+len(bodyKeyword):]
+			if colonIdx := strings.Index(afterBody, ":"); colonIdx >= 0 {
+				candidate := strings.TrimSpace(afterBody[:colonIdx])
+				candidate = strings.TrimRight(candidate, "- ")
+				if candidate != "" {
+					return slugify(candidate)
+				}
+			} else {
+				// No colon at all — check for text between body name and
+				// date or end of string. Handles titles like
+				// "2025 Walnut Creek City Council Holiday Greetings".
+				candidate := afterBody
+				if loc := titleDateRe.FindStringIndex(candidate); loc != nil {
+					candidate = candidate[:loc[0]]
+				}
+				candidate = strings.TrimSpace(candidate)
+				candidate = strings.TrimRight(candidate, "- ")
+				if candidate != "" {
+					return slugify(candidate)
+				}
+			}
+		}
+	}
+
+	// Check for session text between the first colon and the date.
+	// This handles "City Council: Closed session - 2/2/2026".
 	_, rest, ok := strings.Cut(title, ":")
 	if !ok {
 		return ""
@@ -222,12 +278,14 @@ func (db *Database) FindByYouTubeID(ytID string) *Meeting {
 }
 
 // Add adds a meeting to the database if it doesn't already exist.
+// A meeting is considered a duplicate if it has the same YouTube video ID or
+// the same meeting ID (date + body + session).
 // Returns true if the meeting was added (i.e. it was new).
 func (db *Database) Add(m *Meeting) bool {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	for _, existing := range db.Meetings {
-		if existing.YouTubeID == m.YouTubeID {
+		if existing.YouTubeID == m.YouTubeID || existing.ID == m.ID {
 			return false
 		}
 	}
