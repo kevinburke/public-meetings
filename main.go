@@ -10,7 +10,7 @@
 //
 //	watch     Run continuously, checking for new videos and processing them
 //	check     Check for new videos once and exit
-//	process   Process all pending meetings (download, transcribe, fetch agenda)
+//	process   Process all pending meetings (download, transcribe, fetch agenda, annotate)
 //	generate  Regenerate the static site from existing data
 //	annotate  Use codex to match agenda items to transcript timestamps
 //	version   Print the version
@@ -39,7 +39,7 @@ Commands:
 
 	watch     Run continuously, checking for new videos and processing them
 	check     Check for new videos once and exit
-	process   Process all pending meetings (download, transcribe, fetch agenda)
+	process   Process all pending meetings (download, transcribe, fetch agenda, annotate)
 	generate  Regenerate the static site from existing data
 	annotate  Use codex to match agenda items to transcript timestamps
 	version   Print the version
@@ -167,9 +167,10 @@ func runProcess(ctx context.Context, args []string) {
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: walnut-creek-meetings process
 
-Download, transcribe, and fetch agendas for all pending meetings in the
-database. Each meeting progresses through: download (yt-dlp) -> transcribe
-(whisper) -> fetch agenda (Granicus) -> generate site.
+Download, transcribe, fetch agendas, and annotate all pending meetings in
+the database. Each meeting progresses through: download (yt-dlp) -> transcribe
+(whisper) -> fetch agenda (Granicus) -> annotate (codex) -> generate site.
+Meetings that already have annotations are skipped.
 
 Run 'walnut-creek-meetings check' first to discover new meetings.
 `)
@@ -186,7 +187,7 @@ func processMeetings(ctx context.Context, cfg *Config, db *Database) {
 		return
 	}
 
-	// Process meetings in order: download, transcribe, fetch agenda
+	// Process meetings in order: download, transcribe, fetch agenda, annotate
 	for _, m := range db.Meetings {
 		if ctx.Err() != nil {
 			return
@@ -240,6 +241,19 @@ func processMeetings(ctx context.Context, cfg *Config, db *Database) {
 				slog.Error("fetching agenda", "meeting", m.ID, "error", err)
 				// Non-fatal: continue without agenda
 			}
+			if err := db.Save(); err != nil {
+				slog.Error("saving database", "error", err)
+				return
+			}
+
+			if _, err := annotateMeetingIfNeeded(ctx, m); err != nil {
+				slog.Error("annotating meeting", "meeting", m.ID, "error", err)
+				// Non-fatal: continue without annotations
+			}
+			if err := db.Save(); err != nil {
+				slog.Error("saving database", "error", err)
+				return
+			}
 
 			m.Status = StatusComplete
 			if err := db.Save(); err != nil {
@@ -251,8 +265,41 @@ func processMeetings(ctx context.Context, cfg *Config, db *Database) {
 			if err := GenerateSite(cfg, db); err != nil {
 				slog.Error("generating site", "error", err)
 			}
+
+		case StatusComplete:
+			annotated, err := annotateMeetingIfNeeded(ctx, m)
+			if err != nil {
+				slog.Error("annotating meeting", "meeting", m.ID, "error", err)
+				continue
+			}
+			if !annotated {
+				continue
+			}
+			if err := db.Save(); err != nil {
+				slog.Error("saving database", "error", err)
+				return
+			}
+			// Regenerate site since we produced a new annotation
+			if err := GenerateSite(cfg, db); err != nil {
+				slog.Error("generating site", "error", err)
+			}
 		}
 	}
+}
+
+// annotateMeetingIfNeeded runs annotation for a meeting if the annotation file
+// doesn't already exist and the meeting has the required transcript and agenda.
+// Returns (false, nil) without doing anything if annotations already exist.
+func annotateMeetingIfNeeded(ctx context.Context, m *Meeting) (bool, error) {
+	annotationPath := filepath.Join(projectRoot(), "var", "artifacts", m.ID+"-annotations.json")
+	if _, err := os.Stat(annotationPath); err == nil {
+		slog.Info("skipping annotation, already exists", "meeting", m.ID)
+		return false, nil
+	}
+	if err := AnnotateMeeting(ctx, m); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // runGenerate regenerates the static site.
