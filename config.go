@@ -213,7 +213,7 @@ func getConfigPath() (string, error) {
 		return localPath, nil
 	}
 
-	return "", fmt.Errorf(`config file not found. Checked:
+	return "", fmt.Errorf(`config file not found; checked:
   %s
   %s
   %s
@@ -235,8 +235,7 @@ agenda_rss_url = "https://walnutcreek.granicus.com/ViewPublisherRSS.php?view_id=
 time_zone = "America/Los_Angeles"
 
 Get a YouTube Data API key at https://console.cloud.google.com/apis/credentials
-Enable the "YouTube Data API v3" for your project first.
-`, checkedLocations[0], checkedLocations[1], checkedLocations[2])
+Enable the "YouTube Data API v3" for your project first`, checkedLocations[0], checkedLocations[1], checkedLocations[2])
 }
 
 // LoadConfig reads and parses the TOML configuration file.

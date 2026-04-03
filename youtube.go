@@ -164,7 +164,7 @@ func (c *YouTubeClient) GetVideoDetails(ctx context.Context, videoID string) (*y
 }
 
 // doJSON performs an HTTP request and decodes the JSON response.
-func (c *YouTubeClient) doJSON(req *http.Request, target interface{}) error {
+func (c *YouTubeClient) doJSON(req *http.Request, target any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err

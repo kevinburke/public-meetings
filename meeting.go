@@ -23,13 +23,6 @@ const (
 	TransportationCommission MeetingBody = "transportation-commission"
 )
 
-var allBodies = []MeetingBody{
-	CityCouncil,
-	PlanningCommission,
-	DesignReviewCommission,
-	TransportationCommission,
-}
-
 func (b MeetingBody) DisplayName() string {
 	switch b {
 	case CityCouncil:
@@ -125,8 +118,8 @@ func sessionFromTitle(title string, body MeetingBody) string {
 	if bodyKeyword != "" {
 		if idx := strings.Index(lower, bodyKeyword); idx >= 0 {
 			afterBody := title[idx+len(bodyKeyword):]
-			if colonIdx := strings.Index(afterBody, ":"); colonIdx >= 0 {
-				candidate := strings.TrimSpace(afterBody[:colonIdx])
+			if before, _, ok := strings.Cut(afterBody, ":"); ok {
+				candidate := strings.TrimSpace(before)
 				candidate = strings.TrimRight(candidate, "- ")
 				if candidate != "" {
 					return slugify(candidate)
