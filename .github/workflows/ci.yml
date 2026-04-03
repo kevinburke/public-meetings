@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 9 * * *"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: go test -trimpath ./...
