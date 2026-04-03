@@ -68,7 +68,7 @@ func findJSRuntime() (name string, path string) {
 // gives up immediately on errors that won't resolve with time (e.g. the video
 // is a future live event).
 func DownloadVideo(ctx context.Context, cfg *Config, meeting *Meeting) error {
-	videoDir := cfg.VideosDir()
+	videoDir := cfg.VideosDir(meeting.InstanceSlug)
 	if err := os.MkdirAll(videoDir, 0o755); err != nil {
 		return fmt.Errorf("creating video directory: %w", err)
 	}

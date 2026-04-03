@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,25 +135,31 @@ func TestFetchAgendaURL(t *testing.T) {
 		{PlanningCommission, "2026-02-03", ""},
 	}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/rss+xml")
-		fmt.Fprint(w, rssXML)
-	})
-	srv := httptest.NewServer(handler)
-	defer srv.Close()
+	origFetch := fetchAgendaFeed
+	fetchAgendaFeed = func(ctx context.Context, rssURL string) ([]byte, error) {
+		return []byte(rssXML), nil
+	}
+	defer func() {
+		fetchAgendaFeed = origFetch
+	}()
 
-	origURL := granicusRSSURL
-	setGranicusRSSURL(srv.URL)
-	defer setGranicusRSSURL(origURL)
+	setGranicusRSSURL("https://example.com/rss.xml")
+	defer setGranicusRSSURL("")
+
+	inst := &InstanceConfig{
+		Slug:         "walnut-creek",
+		AgendaRSSURL: "https://example.com/rss.xml",
+	}
 
 	for _, tt := range tests {
 		date, _ := time.Parse("2006-01-02", tt.date)
 		m := &Meeting{
-			ID:   MeetingID(date, tt.body, ""),
-			Body: tt.body,
-			Date: date,
+			InstanceSlug: "walnut-creek",
+			ID:           MeetingID(date, tt.body, ""),
+			Body:         tt.body,
+			Date:         date,
 		}
-		got, err := FetchAgendaURL(context.Background(), m)
+		got, err := FetchAgendaURL(context.Background(), inst, m)
 		if err != nil {
 			t.Errorf("FetchAgendaURL(%s, %s) error: %v", tt.body, tt.date, err)
 			continue

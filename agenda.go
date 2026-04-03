@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -16,13 +15,25 @@ import (
 	"golang.org/x/net/html"
 )
 
-const granicusBase = "https://walnutcreek.granicus.com"
+// testAgendaRSSURL overrides the configured agenda RSS URL in tests.
+var testAgendaRSSURL string
 
-// granicusRSSURL is the RSS feed for all agenda documents across all bodies.
-var granicusRSSURL = granicusBase + "/ViewPublisherRSS.php?view_id=12&mode=agendas"
+var fetchAgendaFeed = func(ctx context.Context, rssURL string) ([]byte, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", rssURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching Granicus RSS feed: %w", err)
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
 
 // setGranicusRSSURL overrides the RSS URL (for testing).
-func setGranicusRSSURL(u string) { granicusRSSURL = u }
+func setGranicusRSSURL(u string) { testAgendaRSSURL = u }
 
 // rssItem represents a single item in the Granicus RSS feed.
 type rssItem struct {
@@ -58,20 +69,15 @@ type AgendaItem struct {
 
 // FetchAgendaURL fetches the Granicus RSS feed and finds the agenda URL
 // matching the meeting's body and date.
-func FetchAgendaURL(ctx context.Context, meeting *Meeting) (string, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "GET", granicusRSSURL, nil)
-	if err != nil {
-		return "", err
+func agendaRSSURLForInstance(inst *InstanceConfig) string {
+	if testAgendaRSSURL != "" {
+		return testAgendaRSSURL
 	}
+	return inst.AgendaRSSURL
+}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("fetching Granicus RSS feed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+func FetchAgendaURL(ctx context.Context, inst *InstanceConfig, meeting *Meeting) (string, error) {
+	body, err := fetchAgendaFeed(ctx, agendaRSSURLForInstance(inst))
 	if err != nil {
 		return "", err
 	}
@@ -107,7 +113,11 @@ func FetchAgendaURL(ctx context.Context, meeting *Meeting) (string, error) {
 // DownloadAgenda finds the agenda URL, downloads the HTML to var/artifacts/,
 // parses the agenda items, and stores the URL on the meeting.
 func DownloadAgenda(ctx context.Context, cfg *Config, meeting *Meeting) error {
-	agendaURL, err := FetchAgendaURL(ctx, meeting)
+	inst, ok := cfg.InstanceForSlug(meeting.InstanceSlug)
+	if !ok {
+		return fmt.Errorf("unknown instance slug %q for meeting %s", meeting.InstanceSlug, meeting.ID)
+	}
+	agendaURL, err := FetchAgendaURL(ctx, inst, meeting)
 	if err != nil {
 		return err
 	}
@@ -119,12 +129,12 @@ func DownloadAgenda(ctx context.Context, cfg *Config, meeting *Meeting) error {
 	meeting.AgendaURL = agendaURL
 
 	// Download agenda HTML to var/artifacts/
-	artifactsDir := filepath.Join(projectRoot(), "var", "artifacts")
-	if err := os.MkdirAll(artifactsDir, 0o755); err != nil {
+	artifactDir := artifactsDir(meeting.InstanceSlug)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return fmt.Errorf("creating artifacts directory: %w", err)
 	}
 
-	htmlPath := filepath.Join(artifactsDir, meeting.ID+".html")
+	htmlPath := agendaHTMLPath(meeting)
 	if err := downloadFile(ctx, agendaURL, htmlPath); err != nil {
 		slog.Warn("could not download agenda HTML", "meeting", meeting.ID, "error", err)
 		// Non-fatal: we still have the URL

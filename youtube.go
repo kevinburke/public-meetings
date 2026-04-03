@@ -13,15 +13,6 @@ import (
 
 const youtubeAPIBase = "https://www.googleapis.com/youtube/v3"
 
-// pacificTZ is the America/Los_Angeles timezone for Walnut Creek, CA.
-var pacificTZ = func() *time.Location {
-	loc, err := time.LoadLocation("America/Los_Angeles")
-	if err != nil {
-		panic("could not load America/Los_Angeles timezone: " + err.Error())
-	}
-	return loc
-}()
-
 // YouTubeClient interacts with the YouTube Data API v3.
 type YouTubeClient struct {
 	apiKey     string
@@ -201,10 +192,14 @@ func (c *YouTubeClient) doJSON(req *http.Request, target interface{}) error {
 
 // CheckForNewMeetings queries YouTube for recent videos and returns any that
 // match meeting types and aren't already in the database.
-func CheckForNewMeetings(ctx context.Context, yt *YouTubeClient, channelID string, db *Database, since time.Time) ([]*Meeting, error) {
+func CheckForNewMeetings(ctx context.Context, yt *YouTubeClient, inst *InstanceConfig, channelID string, db *Database, since time.Time) ([]*Meeting, error) {
 	items, err := yt.SearchRecentVideos(ctx, channelID, since)
 	if err != nil {
 		return nil, err
+	}
+	loc, err := time.LoadLocation(inst.TimeZone)
+	if err != nil {
+		return nil, fmt.Errorf("loading timezone %q: %w", inst.TimeZone, err)
 	}
 
 	var newMeetings []*Meeting
@@ -237,27 +232,26 @@ func CheckForNewMeetings(ctx context.Context, yt *YouTubeClient, channelID strin
 		if err != nil {
 			slog.Warn("could not fetch video details", "id", videoID, "error", err)
 		} else if details.LiveStreamingDetails.ActualStartTime != nil {
-			// Convert UTC to Pacific time before extracting the date,
-			// since a 5pm Pacific meeting is already the next day in UTC.
-			pacific := details.LiveStreamingDetails.ActualStartTime.In(pacificTZ)
-			meetingDate = time.Date(pacific.Year(), pacific.Month(), pacific.Day(), 0, 0, 0, 0, time.UTC)
+			local := details.LiveStreamingDetails.ActualStartTime.In(loc)
+			meetingDate = time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
 		}
 
 		session := sessionFromTitle(item.Snippet.Title, body)
 		m := &Meeting{
-			ID:          MeetingID(meetingDate, body, session),
-			Date:        meetingDate,
-			Body:        body,
-			Session:     session,
-			Title:       item.Snippet.Title,
-			YouTubeID:   videoID,
-			Status:      StatusNew,
-			PublishedAt: item.Snippet.PublishedAt,
+			InstanceSlug: inst.Slug,
+			ID:           MeetingID(meetingDate, body, session),
+			Date:         meetingDate,
+			Body:         body,
+			Session:      session,
+			Title:        item.Snippet.Title,
+			YouTubeID:    videoID,
+			Status:       StatusNew,
+			PublishedAt:  item.Snippet.PublishedAt,
 		}
 
 		if db.Add(m) {
 			newMeetings = append(newMeetings, m)
-			slog.Info("found new meeting", "title", m.Title, "body", m.Body, "date", m.Date.Format("2006-01-02"), "youtube_id", m.YouTubeID)
+			slog.Info("found new meeting", "instance", m.InstanceSlug, "title", m.Title, "body", m.Body, "date", m.Date.Format("2006-01-02"), "youtube_id", m.YouTubeID)
 		}
 	}
 	return newMeetings, nil

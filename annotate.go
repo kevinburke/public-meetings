@@ -31,8 +31,7 @@ type AgendaAnnotation struct {
 // It writes the result to var/artifacts/<meeting-id>-annotations.json.
 func AnnotateMeeting(ctx context.Context, meeting *Meeting) error {
 	// Locate the agenda HTML and transcript VTT
-	root := projectRoot()
-	agendaPath := filepath.Join(root, "var", "artifacts", meeting.ID+".html")
+	agendaPath := agendaHTMLPath(meeting)
 	if _, err := os.Stat(agendaPath); err != nil {
 		return fmt.Errorf("agenda HTML not found at %s: download it first with 'process'", agendaPath)
 	}
@@ -57,7 +56,7 @@ func AnnotateMeeting(ctx context.Context, meeting *Meeting) error {
 	}
 
 	// Prepare working directory with input files for codex
-	workDir := filepath.Join(root, "var", "annotate", meeting.ID)
+	workDir := annotateWorkDir(meeting)
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return fmt.Errorf("creating work directory: %w", err)
 	}
@@ -141,7 +140,7 @@ Rules:
 	}
 
 	// Copy to the standard artifacts location
-	destPath := filepath.Join(root, "var", "artifacts", meeting.ID+"-annotations.json")
+	destPath := annotationJSONPath(meeting)
 	if err := os.WriteFile(destPath, data, 0o644); err != nil {
 		return err
 	}
@@ -157,8 +156,8 @@ Rules:
 }
 
 // LoadAnnotations reads the annotations JSON for a meeting if it exists.
-func LoadAnnotations(meetingID string) (*AnnotationResult, error) {
-	path := filepath.Join(projectRoot(), "var", "artifacts", meetingID+"-annotations.json")
+func LoadAnnotations(meeting *Meeting) (*AnnotationResult, error) {
+	path := annotationJSONPath(meeting)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

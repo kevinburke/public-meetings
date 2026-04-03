@@ -16,7 +16,7 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Walnut Creek Meeting Transcripts</title>
+<title>{{.Name}} Meeting Transcripts</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; line-height: 1.6; }
 h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
@@ -35,8 +35,8 @@ h2 { margin-top: 2em; }
 </style>
 </head>
 <body>
-<h1>Walnut Creek Meeting Transcripts</h1>
-<p>Searchable transcripts of Walnut Creek city government meetings.</p>
+<h1>{{.Name}} Meeting Transcripts</h1>
+<p>{{.Description}}</p>
 {{range .Bodies}}
 <h2>{{.Name}}</h2>
 <ul class="meeting-list">
@@ -54,6 +54,36 @@ h2 { margin-top: 2em; }
 </html>
 `))
 
+var homeTemplate = template.Must(template.New("home").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Public Meetings</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+.instance-list { list-style: none; padding: 0; }
+.instance-list li { padding: 14px 0; border-bottom: 1px solid #eee; }
+.instance-list a { color: #0066cc; font-weight: 600; text-decoration: none; }
+.instance-list a:hover { text-decoration: underline; }
+.instance-desc { color: #555; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>Public Meetings</h1>
+<ul class="instance-list">
+{{range .Instances}}
+<li>
+<a href="{{.Slug}}/">{{.Name}}</a>
+<div class="instance-desc">{{.Description}}</div>
+</li>
+{{end}}
+</ul>
+</body>
+</html>
+`))
+
 var meetingTemplate = template.Must(template.New("meeting").Funcs(template.FuncMap{
 	"bodyClass": func(b MeetingBody) string {
 		return "body-" + string(b)
@@ -63,7 +93,7 @@ var meetingTemplate = template.Must(template.New("meeting").Funcs(template.FuncM
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} - Walnut Creek Meetings</title>
+<title>{{.Title}} - {{.InstanceName}} Meetings</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; line-height: 1.6; }
 a { color: #0066cc; }
@@ -107,7 +137,7 @@ h1 { font-size: 1.5em; }
 </style>
 </head>
 <body>
-<div class="back-link"><a href="index.html">&larr; All Meetings</a></div>
+<div class="back-link"><a href="index.html">&larr; All {{.InstanceName}} Meetings</a></div>
 <h1>{{.Title}}</h1>
 <p>{{.DateFormatted}} &middot; {{.BodyName}}</p>
 
@@ -305,6 +335,7 @@ type templateAgendaItem struct {
 }
 
 type meetingPageData struct {
+	InstanceName   string
 	Title          string
 	DateFormatted  string
 	BodyName       string
@@ -317,7 +348,19 @@ type meetingPageData struct {
 }
 
 type indexPageData struct {
-	Bodies []indexBodyData
+	Name        string
+	Description string
+	Bodies      []indexBodyData
+}
+
+type homeInstanceData struct {
+	Slug        string
+	Name        string
+	Description string
+}
+
+type homePageData struct {
+	Instances []homeInstanceData
 }
 
 // GenerateSite generates the static HTML website from the database.
@@ -337,28 +380,38 @@ func GenerateSite(cfg *Config, db *Database) error {
 		return meetings[i].Date.After(meetings[j].Date)
 	})
 
-	// Generate individual meeting pages
-	for _, m := range meetings {
-		if m.Status != StatusTranscribed && m.Status != StatusComplete {
-			continue
+	for _, inst := range cfg.Instances {
+		instanceDir := cfg.SiteInstanceDir(inst.Slug)
+		if err := os.MkdirAll(instanceDir, 0o755); err != nil {
+			return fmt.Errorf("creating instance output directory: %w", err)
 		}
-		if err := generateMeetingPage(outDir, m); err != nil {
-			slog.Error("generating meeting page", "meeting", m.ID, "error", err)
-			continue
+		for _, m := range meetings {
+			if m.InstanceSlug != inst.Slug {
+				continue
+			}
+			if m.Status != StatusTranscribed && m.Status != StatusComplete {
+				continue
+			}
+			if err := generateMeetingPage(instanceDir, &inst, m); err != nil {
+				slog.Error("generating meeting page", "instance", inst.Slug, "meeting", m.ID, "error", err)
+				continue
+			}
+		}
+		if err := generateIndexPage(instanceDir, &inst, meetings); err != nil {
+			return fmt.Errorf("generating index page for %s: %w", inst.Slug, err)
 		}
 	}
-
-	// Generate index page
-	if err := generateIndexPage(outDir, meetings); err != nil {
-		return fmt.Errorf("generating index page: %w", err)
+	if err := generateHomePage(outDir, cfg.Instances); err != nil {
+		return fmt.Errorf("generating home page: %w", err)
 	}
 
 	slog.Info("site generated", "output", outDir)
 	return nil
 }
 
-func generateMeetingPage(outDir string, m *Meeting) error {
+func generateMeetingPage(outDir string, inst *InstanceConfig, m *Meeting) error {
 	data := meetingPageData{
+		InstanceName:  inst.Name,
 		Title:         m.Title,
 		DateFormatted: m.Date.Format("January 2, 2006"),
 		BodyName:      m.Body.DisplayName(),
@@ -366,15 +419,14 @@ func generateMeetingPage(outDir string, m *Meeting) error {
 		AgendaURL:     m.AgendaURL,
 	}
 
-	result, _ := LoadAnnotations(m.ID)
+	result, _ := LoadAnnotations(m)
 	if result != nil {
 		data.Annotations = result.Items
 		data.MeetingSummary = result.MeetingSummary
 	}
 
 	// Load parsed agenda items if the HTML is available
-	agendaHTMLPath := filepath.Join(projectRoot(), "var", "artifacts", m.ID+".html")
-	if agendaItems, err := ParseAgendaHTML(agendaHTMLPath); err == nil {
+	if agendaItems, err := ParseAgendaHTML(agendaHTMLPath(m)); err == nil {
 		for _, item := range agendaItems {
 			if item.Description == "" && len(item.Documents) == 0 {
 				continue // skip items with no content beyond the title
@@ -431,11 +483,14 @@ func generateMeetingPage(outDir string, m *Meeting) error {
 	return meetingTemplate.Execute(f, data)
 }
 
-func generateIndexPage(outDir string, meetings []*Meeting) error {
+func generateIndexPage(outDir string, inst *InstanceConfig, meetings []*Meeting) error {
 	bodyOrder := []MeetingBody{CityCouncil, PlanningCommission, DesignReviewCommission, TransportationCommission}
 	grouped := make(map[MeetingBody][]indexMeetingData)
 
 	for _, m := range meetings {
+		if m.InstanceSlug != inst.Slug {
+			continue
+		}
 		if m.Status != StatusTranscribed && m.Status != StatusComplete {
 			continue
 		}
@@ -446,7 +501,7 @@ func generateIndexPage(outDir string, meetings []*Meeting) error {
 			HasAgenda:     m.AgendaURL != "",
 			AgendaURL:     m.AgendaURL,
 		}
-		if result, err := LoadAnnotations(m.ID); err == nil {
+		if result, err := LoadAnnotations(m); err == nil {
 			entry.MeetingSummary = result.MeetingSummary
 		}
 		grouped[m.Body] = append(grouped[m.Body], entry)
@@ -462,7 +517,11 @@ func generateIndexPage(outDir string, meetings []*Meeting) error {
 		}
 	}
 
-	data := indexPageData{Bodies: bodies}
+	data := indexPageData{
+		Name:        inst.Name,
+		Description: inst.Description,
+		Bodies:      bodies,
+	}
 
 	outPath := filepath.Join(outDir, "index.html")
 	f, err := os.Create(outPath)
@@ -477,4 +536,26 @@ func generateIndexPage(outDir string, meetings []*Meeting) error {
 	}
 
 	return nil
+}
+
+func generateHomePage(outDir string, instances []InstanceConfig) error {
+	data := homePageData{
+		Instances: make([]homeInstanceData, 0, len(instances)),
+	}
+	for _, inst := range instances {
+		data.Instances = append(data.Instances, homeInstanceData{
+			Slug:        inst.Slug,
+			Name:        inst.Name,
+			Description: inst.Description,
+		})
+	}
+
+	outPath := filepath.Join(outDir, "index.html")
+	f, err := os.Create(outPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return homeTemplate.Execute(f, data)
 }

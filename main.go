@@ -1,10 +1,10 @@
-// The walnut-creek-meetings tool monitors the City of Walnut Creek YouTube
-// channel for new meeting videos, downloads them, transcribes them with
-// Whisper, and generates a static website with searchable transcripts.
+// The public-meetings tool monitors one or more configured public
+// meeting channels, downloads the videos, transcribes them with Whisper, and
+// generates a static website with searchable transcripts.
 //
 // Usage:
 //
-//	walnut-creek-meetings <command> [arguments]
+//	public-meetings <command> [arguments]
 //
 // Commands:
 //
@@ -23,17 +23,16 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"time"
 )
 
-const help = `The walnut-creek-meetings tool monitors the City of Walnut Creek YouTube
-channel for new meeting videos, downloads and transcribes them, and generates
+const help = `The public-meetings tool monitors one or more configured
+public meeting channels, downloads and transcribes their videos, and generates
 a static website with searchable transcripts.
 
 Usage:
 
-	walnut-creek-meetings <command> [arguments]
+	public-meetings <command> [arguments]
 
 Commands:
 
@@ -44,7 +43,7 @@ Commands:
 	annotate  Use codex to match agenda items to transcript timestamps
 	version   Print the version
 
-Use "walnut-creek-meetings <command> --help" for more information about a command.
+Use "public-meetings <command> --help" for more information about a command.
 `
 
 func usage() {
@@ -75,7 +74,7 @@ func main() {
 
 	switch args[0] {
 	case "version":
-		fmt.Fprintf(os.Stdout, "walnut-creek-meetings version %s\n", Version)
+		fmt.Fprintf(os.Stdout, "public-meetings version %s\n", Version)
 		os.Exit(0)
 	case "watch":
 		runWatch(ctx, args[1:])
@@ -88,7 +87,7 @@ func main() {
 	case "annotate":
 		runAnnotate(ctx, args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "walnut-creek-meetings: unknown command %q\n\n", args[0])
+		fmt.Fprintf(os.Stderr, "public-meetings: unknown command %q\n\n", args[0])
 		usage()
 		os.Exit(2)
 	}
@@ -109,7 +108,17 @@ func loadConfigAndDB() (*Config, *Database) {
 		fmt.Fprintf(os.Stderr, "Error loading database: %v\n", err)
 		os.Exit(1)
 	}
+	normalizeMeetingInstances(cfg, db)
 	return cfg, db
+}
+
+func normalizeMeetingInstances(cfg *Config, db *Database) {
+	defaultSlug := cfg.DefaultInstanceSlug()
+	for _, m := range db.Meetings {
+		if m.InstanceSlug == "" {
+			m.InstanceSlug = defaultSlug
+		}
+	}
 }
 
 // runCheck checks for new videos once and exits.
@@ -117,11 +126,10 @@ func runCheck(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
 	lookbackDays := fs.Int("lookback-days", 180, "How many days back to search for videos")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: walnut-creek-meetings check [flags]
+		fmt.Fprintf(os.Stderr, `Usage: public-meetings check [flags]
 
-Query the YouTube API for recent videos from the configured channel and add
-any new city council, planning commission, or design review commission
-meetings to the database.
+Query the YouTube API for recent videos from each configured instance and add
+any newly discovered meetings to the database.
 
 Flags:
 `)
@@ -132,18 +140,22 @@ Flags:
 	cfg, db := loadConfigAndDB()
 	yt := NewYouTubeClient(cfg.YouTubeAPIKey)
 
-	channelID, err := yt.ResolveChannelID(ctx, cfg.ChannelHandle)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error resolving channel: %v\n", err)
-		os.Exit(1)
-	}
-	slog.Info("resolved channel", "handle", cfg.ChannelHandle, "id", channelID)
-
 	since := time.Now().AddDate(0, 0, -*lookbackDays)
-	newMeetings, err := CheckForNewMeetings(ctx, yt, channelID, db, since)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error checking for new meetings: %v\n", err)
-		os.Exit(1)
+	var newMeetings []*Meeting
+	for _, inst := range cfg.Instances {
+		channelID, err := yt.ResolveChannelID(ctx, inst.ChannelHandle)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving channel for %s: %v\n", inst.Slug, err)
+			os.Exit(1)
+		}
+		slog.Info("resolved channel", "instance", inst.Slug, "handle", inst.ChannelHandle, "id", channelID)
+
+		found, err := CheckForNewMeetings(ctx, yt, &inst, channelID, db, since)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error checking for new meetings for %s: %v\n", inst.Slug, err)
+			os.Exit(1)
+		}
+		newMeetings = append(newMeetings, found...)
 	}
 
 	if err := db.Save(); err != nil {
@@ -156,7 +168,7 @@ Flags:
 	} else {
 		slog.Info("found new meetings", "count", len(newMeetings))
 		for _, m := range newMeetings {
-			fmt.Printf("  %s: %s\n", m.ID, m.Title)
+			fmt.Printf("  %s: %s\n", m.QualifiedID(), m.Title)
 		}
 	}
 }
@@ -165,14 +177,14 @@ Flags:
 func runProcess(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("process", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: walnut-creek-meetings process
+		fmt.Fprintf(os.Stderr, `Usage: public-meetings process
 
 Download, transcribe, fetch agendas, and annotate all pending meetings in
 the database. Each meeting progresses through: download (yt-dlp) -> transcribe
 (whisper) -> fetch agenda (Granicus) -> annotate (codex) -> generate site.
 Meetings that already have annotations are skipped.
 
-Run 'walnut-creek-meetings check' first to discover new meetings.
+Run 'public-meetings check' first to discover meetings.
 `)
 	}
 	fs.Parse(args)
@@ -183,7 +195,7 @@ Run 'walnut-creek-meetings check' first to discover new meetings.
 
 func processMeetings(ctx context.Context, cfg *Config, db *Database) {
 	if len(db.Meetings) == 0 {
-		slog.Info("no meetings in database; run 'walnut-creek-meetings check' first to discover videos")
+		slog.Info("no meetings in database; run 'public-meetings check' first to discover videos")
 		return
 	}
 
@@ -291,7 +303,7 @@ func processMeetings(ctx context.Context, cfg *Config, db *Database) {
 // doesn't already exist and the meeting has the required transcript and agenda.
 // Returns (false, nil) without doing anything if annotations already exist.
 func annotateMeetingIfNeeded(ctx context.Context, m *Meeting) (bool, error) {
-	annotationPath := filepath.Join(projectRoot(), "var", "artifacts", m.ID+"-annotations.json")
+	annotationPath := annotationJSONPath(m)
 	if _, err := os.Stat(annotationPath); err == nil {
 		slog.Info("skipping annotation, already exists", "meeting", m.ID)
 		return false, nil
@@ -306,10 +318,11 @@ func annotateMeetingIfNeeded(ctx context.Context, m *Meeting) (bool, error) {
 func runGenerate(args []string) {
 	fs := flag.NewFlagSet("generate", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: walnut-creek-meetings generate
+		fmt.Fprintf(os.Stderr, `Usage: public-meetings generate
 
 Regenerate the static HTML website from existing data in the database.
-Outputs to the configured site_output_dir (default: site/).
+Outputs to the configured site_output_dir (default: site/), with one
+subdirectory per configured instance slug.
 `)
 	}
 	fs.Parse(args)
@@ -325,7 +338,7 @@ Outputs to the configured site_output_dir (default: site/).
 func runAnnotate(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("annotate", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: walnut-creek-meetings annotate <meeting-id>
+		fmt.Fprintf(os.Stderr, `Usage: public-meetings annotate <meeting-id>
 
 Use codex to analyze a meeting's transcript and agenda, and produce a JSON
 file mapping agenda items to the timestamps where they are discussed.
@@ -334,7 +347,7 @@ The meeting must have a transcript and a downloaded agenda HTML in
 var/artifacts/. Run 'process' first to ensure these exist.
 
 Example:
-    walnut-creek-meetings annotate 2026-02-03-city-council
+    public-meetings annotate walnut-creek/2026-02-03-city-council
 `)
 	}
 	fs.Parse(args)
@@ -348,7 +361,7 @@ Example:
 			if m.TranscriptPath == "" {
 				continue
 			}
-			agendaPath := filepath.Join(projectRoot(), "var", "artifacts", m.ID+".html")
+			agendaPath := agendaHTMLPath(m)
 			if _, err := os.Stat(agendaPath); err != nil {
 				continue
 			}
@@ -358,31 +371,38 @@ Example:
 			fmt.Fprintf(os.Stderr, "No meetings are ready for annotation.\nRun 'process' first to download transcripts and agendas.\n")
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "Usage: walnut-creek-meetings annotate <meeting-id>\n\nMeetings available for annotation:\n")
+		fmt.Fprintf(os.Stderr, "Usage: public-meetings annotate <meeting-id>\n\nMeetings available for annotation:\n")
 		for _, m := range eligible {
-			annotationPath := filepath.Join(projectRoot(), "var", "artifacts", m.ID+"-annotations.json")
+			annotationPath := annotationJSONPath(m)
 			status := ""
 			if _, err := os.Stat(annotationPath); err == nil {
 				status = " (already annotated)"
 			}
-			fmt.Fprintf(os.Stderr, "  %s%s\n", m.ID, status)
+			fmt.Fprintf(os.Stderr, "  %s%s\n", m.QualifiedID(), status)
 		}
 		os.Exit(2)
 	}
 	meetingID := fs.Arg(0)
 
 	// Find the meeting in the database
-	var meeting *Meeting
+	var matches []*Meeting
 	for _, m := range db.Meetings {
-		if m.ID == meetingID {
-			meeting = m
-			break
+		if m.ID == meetingID || m.QualifiedID() == meetingID {
+			matches = append(matches, m)
 		}
 	}
-	if meeting == nil {
+	if len(matches) == 0 {
 		fmt.Fprintf(os.Stderr, "meeting %q not found in database\n", meetingID)
 		os.Exit(1)
 	}
+	if len(matches) > 1 {
+		fmt.Fprintf(os.Stderr, "meeting %q is ambiguous; use one of:\n", meetingID)
+		for _, m := range matches {
+			fmt.Fprintf(os.Stderr, "  %s\n", m.QualifiedID())
+		}
+		os.Exit(1)
+	}
+	meeting := matches[0]
 
 	if err := AnnotateMeeting(ctx, meeting); err != nil {
 		fmt.Fprintf(os.Stderr, "Error annotating meeting: %v\n", err)
@@ -395,7 +415,7 @@ func runWatch(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("watch", flag.ExitOnError)
 	lookbackDays := fs.Int("lookback-days", 14, "How many days back to search on first check")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: walnut-creek-meetings watch [flags]
+		fmt.Fprintf(os.Stderr, `Usage: public-meetings watch [flags]
 
 Run continuously, periodically checking for new meeting videos on YouTube.
 When new meetings are found, automatically download, transcribe, fetch
@@ -410,27 +430,32 @@ Flags:
 	cfg, db := loadConfigAndDB()
 	yt := NewYouTubeClient(cfg.YouTubeAPIKey)
 
-	channelID, err := yt.ResolveChannelID(ctx, cfg.ChannelHandle)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error resolving channel: %v\n", err)
-		os.Exit(1)
-	}
-	slog.Info("resolved channel", "handle", cfg.ChannelHandle, "id", channelID)
 	slog.Info("starting watcher", "interval", cfg.CheckInterval.Duration)
 
 	// First check uses the lookback window
 	since := time.Now().AddDate(0, 0, -*lookbackDays)
 
 	for {
-		newMeetings, err := CheckForNewMeetings(ctx, yt, channelID, db, since)
-		if err != nil {
-			slog.Error("checking for new meetings", "error", err)
-		} else {
-			if len(newMeetings) > 0 {
-				slog.Info("found new meetings", "count", len(newMeetings))
-				if err := db.Save(); err != nil {
-					slog.Error("saving database", "error", err)
-				}
+		var totalNew int
+		for _, inst := range cfg.Instances {
+			channelID, err := yt.ResolveChannelID(ctx, inst.ChannelHandle)
+			if err != nil {
+				slog.Error("resolving channel", "instance", inst.Slug, "error", err)
+				continue
+			}
+			slog.Debug("resolved channel", "instance", inst.Slug, "handle", inst.ChannelHandle, "id", channelID)
+
+			newMeetings, err := CheckForNewMeetings(ctx, yt, &inst, channelID, db, since)
+			if err != nil {
+				slog.Error("checking for new meetings", "instance", inst.Slug, "error", err)
+				continue
+			}
+			totalNew += len(newMeetings)
+		}
+		if totalNew > 0 {
+			slog.Info("found new meetings", "count", totalNew)
+			if err := db.Save(); err != nil {
+				slog.Error("saving database", "error", err)
 			}
 		}
 

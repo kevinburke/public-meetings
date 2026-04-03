@@ -202,6 +202,7 @@ const (
 
 // Meeting represents a single government meeting with its associated data.
 type Meeting struct {
+	InstanceSlug   string        `json:"instance_slug,omitempty"`
 	ID             string        `json:"id"`
 	Date           time.Time     `json:"date"`
 	Body           MeetingBody   `json:"body"`
@@ -214,6 +215,13 @@ type Meeting struct {
 	TranscriptPath string        `json:"transcript_path,omitempty"`
 	Status         MeetingStatus `json:"status"`
 	PublishedAt    time.Time     `json:"published_at"`
+}
+
+func (m *Meeting) QualifiedID() string {
+	if m.InstanceSlug == "" {
+		return m.ID
+	}
+	return m.InstanceSlug + "/" + m.ID
 }
 
 // MeetingID generates a stable ID from the date, body type, and optional
@@ -285,7 +293,10 @@ func (db *Database) Add(m *Meeting) bool {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	for _, existing := range db.Meetings {
-		if existing.YouTubeID == m.YouTubeID || existing.ID == m.ID {
+		if existing.YouTubeID == m.YouTubeID {
+			return false
+		}
+		if existing.InstanceSlug == m.InstanceSlug && existing.ID == m.ID {
 			return false
 		}
 	}

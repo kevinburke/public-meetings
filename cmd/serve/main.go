@@ -35,7 +35,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	serverHeader := "walnut-creek-meetings/" + version
+	serverHeader := "public-meetings/" + version
 
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir(*dir)))

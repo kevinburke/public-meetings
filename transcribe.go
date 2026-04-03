@@ -129,7 +129,7 @@ func TranscribeAudio(ctx context.Context, cfg *Config, meeting *Meeting) error {
 		slog.Warn("could not determine audio duration, progress will not be shown", "error", err)
 	}
 
-	transcriptDir := cfg.TranscriptsDir()
+	transcriptDir := cfg.TranscriptsDir(meeting.InstanceSlug)
 	if err := os.MkdirAll(transcriptDir, 0o755); err != nil {
 		return fmt.Errorf("creating transcript directory: %w", err)
 	}

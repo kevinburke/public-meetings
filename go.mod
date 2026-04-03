@@ -1,4 +1,4 @@
-module github.com/kevinburke/walnut-creek-meetings
+module github.com/kevinburke/public-meetings
 
 go 1.25.0
 

@@ -1,11 +1,11 @@
-# walnut-creek-meetings
+# public-meetings
 
-Monitors the City of Walnut Creek YouTube channel for new meeting videos,
-downloads them, transcribes them with [mlx-whisper], and generates a static
-website with searchable transcripts and agenda links.
+Monitors one or more public meeting channels, downloads meeting videos,
+transcribes them with [mlx-whisper], and generates a static website with
+searchable transcripts and agenda links.
 
-Supports City Council, Planning Commission, and Design Review Commission
-meetings.
+The site is organized by instance slug. For example, Walnut Creek pages render
+under `/walnut-creek/`.
 
 [mlx-whisper]: https://github.com/ml-explore/mlx-examples/tree/main/whisper
 
@@ -20,29 +20,39 @@ meetings.
 ## Setup
 
 1. Create a config file at one of:
-   - `$XDG_CONFIG_HOME/walnut-creek-meetings`
-   - `~/cfg/walnut-creek-meetings`
-   - `~/.walnut-creek-meetings`
+   - `$XDG_CONFIG_HOME/public-meetings`
+   - `~/cfg/public-meetings`
+   - `~/.public-meetings`
 
    With contents:
 
    ```toml
    youtube_api_key = "YOUR_YOUTUBE_API_KEY"
+
+   [[instances]]
+   slug = "walnut-creek"
+   name = "Walnut Creek"
+   description = "Searchable transcripts of Walnut Creek city government meetings."
+   channel_handle = "@WalnutCreekGov"
+   agenda_rss_url = "https://walnutcreek.granicus.com/ViewPublisherRSS.php?view_id=12&mode=agendas"
+   time_zone = "America/Los_Angeles"
    ```
 
    Get a YouTube Data API key at https://console.cloud.google.com/apis/credentials
    (enable "YouTube Data API v3" for your project first).
 
-   Optional fields with their defaults:
+   Global optional fields with their defaults:
 
    ```toml
-   channel_handle = "@WalnutCreekGov"
    yt_dlp_path = "yt-dlp"
    whisper_model = "mlx-community/whisper-medium"
    data_dir = "data"
    site_output_dir = "site"
    check_interval = "30m"
    ```
+
+   Legacy single-instance configs that only set top-level `channel_handle`
+   still work; they are treated as the default `walnut-creek` instance.
 
 2. Install dependencies:
 
@@ -58,16 +68,16 @@ meetings.
 ### Discover new meetings
 
 ```
-walnut-creek-meetings check
+public-meetings check
 ```
 
-Queries the YouTube API for recent videos and adds any new meetings to the
-database.
+Queries the YouTube API for each configured instance and adds any new meetings
+to the database.
 
 ### Process meetings
 
 ```
-walnut-creek-meetings process
+public-meetings process
 ```
 
 Downloads, transcribes, and fetches agendas for all pending meetings. Each
@@ -77,29 +87,30 @@ fetch agenda (Granicus RSS) -> generate site.
 ### Regenerate the site
 
 ```
-walnut-creek-meetings generate
+public-meetings generate
 ```
 
 Regenerates the static HTML site from existing data. Output goes to the
-configured `site_output_dir` (default: `site/`).
+configured `site_output_dir` (default: `site/`), with one subdirectory per
+instance slug plus a root landing page.
 
 ### Annotate transcripts with agenda items
 
 ```
-walnut-creek-meetings annotate <meeting-id>
+public-meetings annotate <meeting-id>
 ```
 
 Uses [Codex](https://github.com/openai/codex) to analyze a meeting's transcript
 and agenda, producing a JSON file that maps agenda items to the timestamps where
 they are discussed. The meeting must already have a transcript and downloaded
-agenda HTML (run `process` first). Results are saved to
-`var/artifacts/<meeting-id>-annotations.json` and displayed as a clickable table
-of contents on the meeting page.
+agenda HTML (run `process` first). Results are saved under
+`var/artifacts/<instance-slug>/` and displayed as a clickable table of contents
+on the meeting page.
 
 ### Run continuously
 
 ```
-walnut-creek-meetings watch
+public-meetings watch
 ```
 
 Runs in a loop, periodically checking for new videos and processing them
@@ -116,13 +127,13 @@ Starts a local HTTPS server to preview the generated site.
 ## Typical workflow
 
 ```
-walnut-creek-meetings check              # discover new meetings
-walnut-creek-meetings process            # download, transcribe, fetch agendas
-walnut-creek-meetings annotate <id>      # (optional) annotate with agenda items
-walnut-creek-meetings generate           # regenerate the site
+public-meetings check              # discover new meetings
+public-meetings process            # download, transcribe, fetch agendas
+public-meetings annotate <id>      # (optional) annotate with agenda items
+public-meetings generate           # regenerate the site
 ```
 
-Or just run `walnut-creek-meetings watch` to do it all continuously.
+Or just run `public-meetings watch` to do it all continuously.
 
 ## Project layout
 
@@ -139,5 +150,5 @@ site.go         Static site generation (HTML templates)
 cmd/serve/      Local HTTPS preview server
 data/           Database and downloaded files (gitignored)
 var/            Artifacts and working files (gitignored)
-site/           Generated static site output
+site/           Generated static site output (`/<slug>/...`)
 ```
