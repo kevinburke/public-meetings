@@ -60,8 +60,9 @@ under `/walnut-creek/`.
    make setup
    ```
 
-   This creates a Python venv with mlx-whisper, downloads Deno (used by
-   yt-dlp), and builds the Go binary.
+   This creates a Python venv, installs the pinned `mlx-whisper` dependency
+   from `requirements.txt`, downloads Deno (used by yt-dlp), and builds the Go
+   binary.
 
 ## Usage
 

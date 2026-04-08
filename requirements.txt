@@ -1,0 +1,2 @@
+# Pinned so Dependabot can update mlx-whisper when new releases land.
+mlx-whisper==0.4.3

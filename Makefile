@@ -9,9 +9,9 @@ setup: $(WHISPER) $(DENO) tmp/public-meetings
 $(VENV)/bin/python:
 	python3 -m venv $(VENV)
 
-$(WHISPER): $(VENV)/bin/python
+$(WHISPER): requirements.txt $(VENV)/bin/python
 	$(VENV)/bin/pip install --upgrade pip
-	$(VENV)/bin/pip install mlx-whisper
+	$(VENV)/bin/pip install --requirement requirements.txt
 
 $(DENO):
 	curl -fsSL https://deno.land/install.sh | DENO_INSTALL=. sh
