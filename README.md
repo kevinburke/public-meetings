@@ -1,21 +1,41 @@
 # public-meetings
 
 Monitors one or more public meeting channels, downloads meeting videos,
-transcribes them with [mlx-whisper], and generates a static website with
-searchable transcripts and agenda links.
+transcribes them with Whisper, and generates a static website with searchable
+transcripts and agenda links.
 
 The site is organized by instance slug. For example, Walnut Creek pages render
 under `/walnut-creek/`.
 
-[mlx-whisper]: https://github.com/ml-explore/mlx-examples/tree/main/whisper
-
 ## Requirements
 
 - Go 1.21+
-- Python 3 (for mlx-whisper)
-- macOS with Apple Silicon (mlx-whisper uses the MLX framework)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- ffmpeg / ffprobe
 - A YouTube Data API v3 key
+- A Whisper engine — either [mlx-whisper] (macOS, Apple Silicon) or
+  [whisper.cpp] (Linux/CPU); see [Transcription engines](#transcription-engines)
+
+[mlx-whisper]: https://github.com/ml-explore/mlx-examples/tree/main/whisper
+[whisper.cpp]: https://github.com/ggml-org/whisper.cpp
+
+## Transcription engines
+
+Two backends are supported; pick via the `transcription_engine` config field.
+
+| Engine        | `transcription_engine` | Platform        | `whisper_model` is…                     |
+| ------------- | ---------------------- | --------------- | --------------------------------------- |
+| mlx-whisper   | `"mlx"` (default)      | macOS / Apple Silicon | a Hugging Face model id, e.g. `mlx-community/whisper-medium` |
+| whisper.cpp   | `"whisper-cpp"`        | Linux / CPU     | a filesystem path to a GGML `.bin` model |
+
+The whisper.cpp backend re-encodes the downloaded audio to 16 kHz mono WAV via
+ffmpeg before invoking `whisper-cli`; the mlx backend passes the downloaded
+audio straight to `mlx_whisper`. Both engines produce the same WebVTT
+transcript format so downstream code (agenda annotation, site generation) is
+engine-agnostic.
+
+After a successful transcription the source audio file is deleted — it can
+always be re-downloaded from YouTube if a re-transcription is ever needed.
 
 ## Setup
 
@@ -44,17 +64,23 @@ under `/walnut-creek/`.
    Global optional fields with their defaults:
 
    ```toml
-   yt_dlp_path = "yt-dlp"
-   whisper_model = "mlx-community/whisper-medium"
-   data_dir = "data"
-   site_output_dir = "site"
-   check_interval = "30m"
+   yt_dlp_path          = "yt-dlp"
+   transcription_engine = "mlx"                          # or "whisper-cpp"
+   whisper_model        = "mlx-community/whisper-medium" # HF id (mlx) or GGML path (whisper-cpp)
+   whisper_binary       = ""                             # optional override; otherwise PATH/venv lookup
+   data_dir             = "data"
+   site_output_dir      = "site"
+   check_interval       = "30m"
    ```
+
+   When `transcription_engine = "whisper-cpp"`, `whisper_model` is required
+   and must point at a GGML `.bin` model file (there is no sensible default;
+   model choice is user-driven).
 
    Legacy single-instance configs that only set top-level `channel_handle`
    still work; they are treated as the default `walnut-creek` instance.
 
-2. Install dependencies:
+2. Install dependencies. For the mlx (macOS) engine:
 
    ```
    make setup
@@ -63,6 +89,11 @@ under `/walnut-creek/`.
    This creates a Python venv, installs the pinned `mlx-whisper` dependency
    from `requirements.txt`, downloads Deno (used by yt-dlp), and builds the Go
    binary.
+
+   For the whisper.cpp (Linux) engine, install `whisper-cli` yourself — build
+   it from https://github.com/ggml-org/whisper.cpp or use a packaged binary —
+   and download a GGML model (for example `ggml-medium.en.bin`). Point
+   `whisper_model` at the `.bin` path.
 
 ## Usage
 
