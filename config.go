@@ -23,15 +23,24 @@ func (d *Duration) UnmarshalText(text []byte) error {
 	return err
 }
 
+// Transcription engines. EngineMLX uses Apple's mlx-whisper (macOS only);
+// EngineWhisperCpp shells out to whisper.cpp's whisper-cli (Linux/CPU).
+const (
+	EngineMLX        = "mlx"
+	EngineWhisperCpp = "whisper-cpp"
+)
+
 type Config struct {
-	YouTubeAPIKey string           `toml:"youtube_api_key"`
-	ChannelHandle string           `toml:"channel_handle"`
-	YTDLPPath     string           `toml:"yt_dlp_path"`
-	WhisperModel  string           `toml:"whisper_model"`
-	DataDir       string           `toml:"data_dir"`
-	SiteOutputDir string           `toml:"site_output_dir"`
-	CheckInterval Duration         `toml:"check_interval"`
-	Instances     []InstanceConfig `toml:"instances"`
+	YouTubeAPIKey       string           `toml:"youtube_api_key"`
+	ChannelHandle       string           `toml:"channel_handle"`
+	YTDLPPath           string           `toml:"yt_dlp_path"`
+	TranscriptionEngine string           `toml:"transcription_engine"`
+	WhisperModel        string           `toml:"whisper_model"`
+	WhisperBinary       string           `toml:"whisper_binary"`
+	DataDir             string           `toml:"data_dir"`
+	SiteOutputDir       string           `toml:"site_output_dir"`
+	CheckInterval       Duration         `toml:"check_interval"`
+	Instances           []InstanceConfig `toml:"instances"`
 }
 
 type InstanceConfig struct {
@@ -80,7 +89,10 @@ func (c *Config) setDefaults() {
 	if c.YTDLPPath == "" {
 		c.YTDLPPath = "yt-dlp"
 	}
-	if c.WhisperModel == "" {
+	if c.TranscriptionEngine == "" {
+		c.TranscriptionEngine = EngineMLX
+	}
+	if c.WhisperModel == "" && c.TranscriptionEngine == EngineMLX {
 		c.WhisperModel = "mlx-community/whisper-medium"
 	}
 	if c.DataDir == "" {
@@ -107,6 +119,17 @@ func (c *Config) setDefaults() {
 func (c *Config) Validate() error {
 	if c.YouTubeAPIKey == "" {
 		return errors.New("youtube_api_key is required in config file")
+	}
+	switch c.TranscriptionEngine {
+	case EngineMLX:
+		// mlx-whisper accepts a Hugging Face model id; we have a sensible
+		// default, so no further validation is required.
+	case EngineWhisperCpp:
+		if c.WhisperModel == "" {
+			return errors.New("whisper_model is required when transcription_engine is \"whisper-cpp\" (path to a GGML .bin file)")
+		}
+	default:
+		return fmt.Errorf("transcription_engine %q is not supported; use %q or %q", c.TranscriptionEngine, EngineMLX, EngineWhisperCpp)
 	}
 	seen := make(map[string]struct{}, len(c.Instances))
 	for _, inst := range c.Instances {
