@@ -319,6 +319,12 @@ func transcribeWhisperCpp(ctx context.Context, cfg *Config, meeting *Meeting, tr
 		"-ovtt",          // also emit a WebVTT file alongside the default text output
 		"-of", outPrefix, // output filename prefix; whisper-cli appends ".vtt" for -ovtt
 		"-t", strconv.Itoa(runtime.NumCPU()), // CPU threads; whisper.cpp scales near-linearly up to physical cores
+		// Halve beam-search width vs. whisper-cli's default (5,5). Beam
+		// width dominates decoder cost; (3,3) is roughly half the work
+		// for a marginal accuracy hit on clear speech (city council
+		// chamber audio).
+		"-bs", "3",
+		"-bo", "3",
 	}
 	cmd := exec.CommandContext(ctx, whisperPath, args...)
 	if err := runTranscriber(cmd, pw); err != nil {
