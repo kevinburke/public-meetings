@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // Errors from yt-dlp that indicate the video is not available and retrying
@@ -98,15 +100,21 @@ func DownloadVideo(ctx context.Context, cfg *Config, meeting *Meeting) error {
 		}
 
 		var stderr bytes.Buffer
-		cmd := exec.CommandContext(ctx, cfg.YTDLPPath,
+		args := []string{
 			"--output", outputTemplate,
 			"--format", "bestaudio[ext=m4a]/bestaudio/best",
 			"--no-overwrites",
 			"--write-info-json",
 			"--restrict-filenames",
 			"--js-runtimes", jsArg,
-			ytURL,
-		)
+		}
+		// yt-dlp prints a carriage-return progress bar that fills logs when
+		// stdout is not a terminal (e.g. under systemd). Suppress it.
+		if !term.IsTerminal(int(os.Stdout.Fd())) {
+			args = append(args, "--no-progress")
+		}
+		args = append(args, ytURL)
+		cmd := exec.CommandContext(ctx, cfg.YTDLPPath, args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = &stderr
 
