@@ -31,6 +31,14 @@ tmp/serve: $(wildcard cmd/serve/*.go) go.mod go.sum
 	mkdir -p tmp
 	go build -trimpath -o tmp/serve ./cmd/serve
 
+.PHONY: test
+test:
+	go test -trimpath ./...
+
+.PHONY: release
+release: test
+	go run github.com/kevinburke/bump_version@latest --tag-prefix=v $(version) internal/version/version.go
+
 .PHONY: serve
 serve: certs/leaf.pem tmp/serve
 	./tmp/serve

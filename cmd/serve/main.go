@@ -18,9 +18,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-)
 
-const version = "0.1"
+	"github.com/kevinburke/public-meetings/internal/version"
+)
 
 func main() {
 	addr := flag.String("addr", "localhost:9899", "Address to listen on")
@@ -31,11 +31,11 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Fprintf(os.Stdout, "serve version %s\n", version)
+		fmt.Fprintf(os.Stdout, "serve version %s\n", version.Version)
 		os.Exit(0)
 	}
 
-	serverHeader := "public-meetings/" + version
+	serverHeader := "public-meetings/" + version.Version
 
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir(*dir)))

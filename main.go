@@ -24,6 +24,8 @@ import (
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/kevinburke/public-meetings/internal/version"
 )
 
 const help = `The public-meetings tool monitors one or more configured
@@ -74,7 +76,7 @@ func main() {
 
 	switch args[0] {
 	case "version":
-		fmt.Fprintf(os.Stdout, "public-meetings version %s\n", Version)
+		fmt.Fprintf(os.Stdout, "public-meetings version %s\n", version.Version)
 		os.Exit(0)
 	case "watch":
 		runWatch(ctx, args[1:])

@@ -11,8 +11,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const Version = "0.1"
-
 type Duration struct {
 	time.Duration
 }
