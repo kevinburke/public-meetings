@@ -199,6 +199,31 @@ func processMeetings(ctx context.Context, cfg *Config, db *Database) {
 		return
 	}
 
+	// Resume meetings that were killed mid-pipeline. The error paths in
+	// the switch below reset Status on failure, but a SIGKILL (systemd
+	// TimeoutStartSec, OOM, VM reboot) skips them, leaving the meeting
+	// wedged in a transient state that the switch has no case for —
+	// silently dropping it from the site forever.
+	var resumed bool
+	for _, m := range db.Meetings {
+		switch m.Status {
+		case StatusDownloading:
+			slog.Warn("resuming meeting stuck in downloading", "meeting", m.ID)
+			m.Status = StatusNew
+			resumed = true
+		case StatusTranscribing:
+			slog.Warn("resuming meeting stuck in transcribing", "meeting", m.ID)
+			m.Status = StatusDownloaded
+			resumed = true
+		}
+	}
+	if resumed {
+		if err := db.Save(); err != nil {
+			slog.Error("saving database after resume", "error", err)
+			return
+		}
+	}
+
 	// Process meetings in order: download, transcribe, fetch agenda, annotate
 	for _, m := range db.Meetings {
 		if ctx.Err() != nil {
