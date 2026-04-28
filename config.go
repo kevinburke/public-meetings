@@ -29,16 +29,22 @@ const (
 )
 
 type Config struct {
-	YouTubeAPIKey       string           `toml:"youtube_api_key"`
-	ChannelHandle       string           `toml:"channel_handle"`
-	YTDLPPath           string           `toml:"yt_dlp_path"`
-	TranscriptionEngine string           `toml:"transcription_engine"`
-	WhisperModel        string           `toml:"whisper_model"`
-	WhisperBinary       string           `toml:"whisper_binary"`
-	DataDir             string           `toml:"data_dir"`
-	SiteOutputDir       string           `toml:"site_output_dir"`
-	CheckInterval       Duration         `toml:"check_interval"`
-	Instances           []InstanceConfig `toml:"instances"`
+	YouTubeAPIKey       string `toml:"youtube_api_key"`
+	ChannelHandle       string `toml:"channel_handle"`
+	YTDLPPath           string `toml:"yt_dlp_path"`
+	TranscriptionEngine string `toml:"transcription_engine"`
+	WhisperModel        string `toml:"whisper_model"`
+	WhisperBinary       string `toml:"whisper_binary"`
+	// WhisperThreads caps the -t value passed to whisper-cli. Each thread
+	// adds per-core compute buffers on top of the model's resident set;
+	// on memory-constrained hosts the default of runtime.NumCPU() can OOM
+	// during decode. Zero means "use all CPUs" (unchanged from before
+	// this knob existed).
+	WhisperThreads int              `toml:"whisper_threads"`
+	DataDir        string           `toml:"data_dir"`
+	SiteOutputDir  string           `toml:"site_output_dir"`
+	CheckInterval  Duration         `toml:"check_interval"`
+	Instances      []InstanceConfig `toml:"instances"`
 }
 
 type InstanceConfig struct {

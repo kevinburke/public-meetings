@@ -312,13 +312,17 @@ func transcribeWhisperCpp(ctx context.Context, cfg *Config, meeting *Meeting, tr
 	prefix := strings.TrimSuffix(base, filepath.Ext(base))
 	outPrefix := filepath.Join(transcriptDir, prefix)
 
+	threads := cfg.WhisperThreads
+	if threads <= 0 {
+		threads = runtime.NumCPU()
+	}
 	args := []string{
 		"-m", cfg.WhisperModel, // path to a GGML .bin model file (e.g. ggml-medium.en.bin)
 		"-f", wavPath, // input WAV (must be 16 kHz mono PCM, prepared by ffmpeg above)
 		"-l", "en", // language hint; skip auto-detection for a few seconds of startup speedup
 		"-ovtt",          // also emit a WebVTT file alongside the default text output
 		"-of", outPrefix, // output filename prefix; whisper-cli appends ".vtt" for -ovtt
-		"-t", strconv.Itoa(runtime.NumCPU()), // CPU threads; whisper.cpp scales near-linearly up to physical cores
+		"-t", strconv.Itoa(threads), // CPU threads; whisper.cpp scales near-linearly up to physical cores, but each adds per-thread compute-buffer RAM
 		// Halve beam-search width vs. whisper-cli's default (5,5). Beam
 		// width dominates decoder cost; (3,3) is roughly half the work
 		// for a marginal accuracy hit on clear speech (city council
