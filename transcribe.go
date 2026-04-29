@@ -282,9 +282,17 @@ func transcribeWhisperCpp(ctx context.Context, cfg *Config, meeting *Meeting, tr
 		return "", err
 	}
 
-	tmp, err := os.MkdirTemp("", "whisper-cpp-")
+	// Place the scratch dir under DataDir, not the system /tmp. On
+	// systemd hosts /tmp is commonly a RAM-backed tmpfs; the 16 kHz mono
+	// WAV ffmpeg emits below is ~2 MB per minute of audio (so ~600 MB
+	// for a 5h council meeting), and on a 6 GiB guest that allocation
+	// alone can push whisper-cli into OOM during model load.
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return "", fmt.Errorf("creating data directory: %w", err)
+	}
+	tmp, err := os.MkdirTemp(cfg.DataDir, "whisper-cpp-")
 	if err != nil {
-		return "", fmt.Errorf("creating temp dir: %w", err)
+		return "", fmt.Errorf("creating scratch dir under %s: %w", cfg.DataDir, err)
 	}
 	defer os.RemoveAll(tmp)
 
