@@ -48,12 +48,22 @@ type Config struct {
 }
 
 type InstanceConfig struct {
-	Slug          string `toml:"slug"`
-	Name          string `toml:"name"`
-	Description   string `toml:"description"`
-	ChannelHandle string `toml:"channel_handle"`
-	AgendaRSSURL  string `toml:"agenda_rss_url"`
-	TimeZone      string `toml:"time_zone"`
+	Slug        string `toml:"slug"`
+	Name        string `toml:"name"`
+	Description string `toml:"description"`
+	// Source selects the meeting-discovery backend: "youtube" (default) or
+	// "highbond" (Diligent Community / iCompass portals). Each backend
+	// reads a different subset of the remaining fields:
+	//
+	//   youtube:   channel_handle (required), agenda_rss_url (Granicus)
+	//   highbond:  portal_base_url, meeting_types (substring filters;
+	//              empty = include every meeting type the portal exposes)
+	Source        string   `toml:"source"`
+	ChannelHandle string   `toml:"channel_handle"`
+	AgendaRSSURL  string   `toml:"agenda_rss_url"`
+	PortalBaseURL string   `toml:"portal_base_url"`
+	MeetingTypes  []string `toml:"meeting_types"`
+	TimeZone      string   `toml:"time_zone"`
 }
 
 func defaultInstance() InstanceConfig {
@@ -78,11 +88,28 @@ func (ic *InstanceConfig) setDefaults() {
 	if ic.Description == "" {
 		ic.Description = fmt.Sprintf("Searchable transcripts of %s meetings.", ic.Name)
 	}
-	if ic.ChannelHandle == "" {
-		ic.ChannelHandle = def.ChannelHandle
+	// Infer source from which fields the operator filled in. PortalBaseURL
+	// is the unambiguous "this is a Highbond instance" tell. Otherwise we
+	// default to youtube — matches every legacy single-instance config.
+	if ic.Source == "" {
+		if ic.PortalBaseURL != "" {
+			ic.Source = SourceHighbond
+		} else {
+			ic.Source = SourceYouTube
+		}
 	}
-	if ic.AgendaRSSURL == "" {
-		ic.AgendaRSSURL = def.AgendaRSSURL
+	if ic.Source == SourceYouTube {
+		// The walnut-creek defaults are only useful for the legacy
+		// single-instance config form. For YouTube instances that
+		// explicitly set channel_handle they're already overridden;
+		// for any other instance the validator will reject them as
+		// missing, which is what we want.
+		if ic.ChannelHandle == "" {
+			ic.ChannelHandle = def.ChannelHandle
+		}
+		if ic.AgendaRSSURL == "" {
+			ic.AgendaRSSURL = def.AgendaRSSURL
+		}
 	}
 	if ic.TimeZone == "" {
 		ic.TimeZone = def.TimeZone
@@ -121,9 +148,6 @@ func (c *Config) setDefaults() {
 }
 
 func (c *Config) Validate() error {
-	if c.YouTubeAPIKey == "" {
-		return errors.New("youtube_api_key is required in config file")
-	}
 	switch c.TranscriptionEngine {
 	case EngineMLX:
 		// mlx-whisper accepts a Hugging Face model id; we have a sensible
@@ -136,12 +160,29 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("transcription_engine %q is not supported; use %q or %q", c.TranscriptionEngine, EngineMLX, EngineWhisperCpp)
 	}
 	seen := make(map[string]struct{}, len(c.Instances))
+	var needYouTubeKey bool
 	for _, inst := range c.Instances {
 		if inst.Slug == "" {
 			return errors.New("instances.slug is required")
 		}
-		if inst.ChannelHandle == "" {
-			return fmt.Errorf("instances[%s].channel_handle is required", inst.Slug)
+		switch inst.Source {
+		case SourceYouTube:
+			needYouTubeKey = true
+			if inst.ChannelHandle == "" {
+				return fmt.Errorf("instances[%s].channel_handle is required for source %q", inst.Slug, inst.Source)
+			}
+			if inst.PortalBaseURL != "" || len(inst.MeetingTypes) > 0 {
+				return fmt.Errorf("instances[%s]: portal_base_url/meeting_types are only valid for source %q", inst.Slug, SourceHighbond)
+			}
+		case SourceHighbond:
+			if inst.PortalBaseURL == "" {
+				return fmt.Errorf("instances[%s].portal_base_url is required for source %q", inst.Slug, inst.Source)
+			}
+			if inst.ChannelHandle != "" || inst.AgendaRSSURL != "" {
+				return fmt.Errorf("instances[%s]: channel_handle/agenda_rss_url are only valid for source %q", inst.Slug, SourceYouTube)
+			}
+		default:
+			return fmt.Errorf("instances[%s].source %q is not supported; use %q or %q", inst.Slug, inst.Source, SourceYouTube, SourceHighbond)
 		}
 		if _, err := time.LoadLocation(inst.TimeZone); err != nil {
 			return fmt.Errorf("instances[%s].time_zone: %w", inst.Slug, err)
@@ -150,6 +191,9 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("duplicate instance slug %q", inst.Slug)
 		}
 		seen[inst.Slug] = struct{}{}
+	}
+	if needYouTubeKey && c.YouTubeAPIKey == "" {
+		return errors.New("youtube_api_key is required when at least one instance uses source \"youtube\"")
 	}
 	return nil
 }

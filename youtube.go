@@ -213,7 +213,8 @@ func CheckForNewMeetings(ctx context.Context, yt *YouTubeClient, inst *InstanceC
 			slog.Debug("skipping upcoming/live video", "title", item.Snippet.Title, "id", videoID, "status", item.Snippet.LiveBroadcastContent)
 			continue
 		}
-		if db.FindByYouTubeID(videoID) != nil {
+		videoURL := YouTubeWatchURL(videoID)
+		if db.FindByVideoURL(videoURL) != nil {
 			continue
 		}
 
@@ -244,14 +245,14 @@ func CheckForNewMeetings(ctx context.Context, yt *YouTubeClient, inst *InstanceC
 			Body:         body,
 			Session:      session,
 			Title:        item.Snippet.Title,
-			YouTubeID:    videoID,
+			VideoURL:     videoURL,
 			Status:       StatusNew,
 			PublishedAt:  item.Snippet.PublishedAt,
 		}
 
 		if db.Add(m) {
 			newMeetings = append(newMeetings, m)
-			slog.Info("found new meeting", "instance", m.InstanceSlug, "title", m.Title, "body", m.Body, "date", m.Date.Format("2006-01-02"), "youtube_id", m.YouTubeID)
+			slog.Info("found new meeting", "instance", m.InstanceSlug, "title", m.Title, "body", m.Body, "date", m.Date.Format("2006-01-02"), "video_url", m.VideoURL)
 		}
 	}
 	return newMeetings, nil

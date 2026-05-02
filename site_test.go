@@ -40,7 +40,7 @@ func TestGenerateSitePerInstance(t *testing.T) {
 				Date:         time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC),
 				Body:         CityCouncil,
 				Title:        "Walnut Creek City Council: 2/3/26",
-				YouTubeID:    "abc123",
+				VideoURL:     "https://www.youtube.com/watch?v=abc123",
 				Status:       StatusTranscribed,
 			},
 		},

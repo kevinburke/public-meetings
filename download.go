@@ -75,8 +75,10 @@ func DownloadVideo(ctx context.Context, cfg *Config, meeting *Meeting) error {
 		return fmt.Errorf("creating video directory: %w", err)
 	}
 
+	if meeting.VideoURL == "" {
+		return fmt.Errorf("meeting %s has no video URL", meeting.ID)
+	}
 	outputTemplate := filepath.Join(videoDir, meeting.ID+".%(ext)s")
-	ytURL := "https://www.youtube.com/watch?v=" + meeting.YouTubeID
 
 	jsName, jsPath := findJSRuntime()
 	if jsName == "" {
@@ -89,7 +91,7 @@ func DownloadVideo(ctx context.Context, cfg *Config, meeting *Meeting) error {
 		"title", meeting.Title,
 		"body", meeting.Body.DisplayName(),
 		"date", meeting.Date.Format("2006-01-02"),
-		"url", ytURL,
+		"url", meeting.VideoURL,
 		"js_runtime", jsArg,
 	)
 
@@ -113,7 +115,7 @@ func DownloadVideo(ctx context.Context, cfg *Config, meeting *Meeting) error {
 		if !term.IsTerminal(int(os.Stdout.Fd())) {
 			args = append(args, "--no-progress")
 		}
-		args = append(args, ytURL)
+		args = append(args, meeting.VideoURL)
 		cmd := exec.CommandContext(ctx, cfg.YTDLPPath, args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = &stderr

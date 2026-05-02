@@ -21,6 +21,7 @@ const (
 	PlanningCommission       MeetingBody = "planning-commission"
 	DesignReviewCommission   MeetingBody = "design-review-commission"
 	TransportationCommission MeetingBody = "transportation-commission"
+	SchoolBoard              MeetingBody = "school-board"
 )
 
 func (b MeetingBody) DisplayName() string {
@@ -33,6 +34,8 @@ func (b MeetingBody) DisplayName() string {
 		return "Design Review Commission"
 	case TransportationCommission:
 		return "Transportation Commission"
+	case SchoolBoard:
+		return "Governing Board"
 	}
 	return string(b)
 }
@@ -194,6 +197,11 @@ const (
 )
 
 // Meeting represents a single government meeting with its associated data.
+//
+// VideoURL is the canonical pointer to the recording — passed directly to
+// yt-dlp on download, and consumed by the site generator to build a
+// provider-appropriate iframe embed. It replaces an older YouTubeID field;
+// see UnmarshalJSON for the on-disk migration.
 type Meeting struct {
 	InstanceSlug   string        `json:"instance_slug,omitempty"`
 	ID             string        `json:"id"`
@@ -201,13 +209,34 @@ type Meeting struct {
 	Body           MeetingBody   `json:"body"`
 	Session        string        `json:"session,omitempty"` // e.g. "closed-session"
 	Title          string        `json:"title"`
-	YouTubeID      string        `json:"youtube_id"`
+	VideoURL       string        `json:"video_url"`
 	AgendaURL      string        `json:"agenda_url,omitempty"`
 	VideoPath      string        `json:"video_path,omitempty"`
 	AudioPath      string        `json:"audio_path,omitempty"`
 	TranscriptPath string        `json:"transcript_path,omitempty"`
 	Status         MeetingStatus `json:"status"`
 	PublishedAt    time.Time     `json:"published_at"`
+}
+
+// UnmarshalJSON migrates legacy records that stored `youtube_id` instead of
+// `video_url`. Once the database is re-saved the legacy field is gone, since
+// Marshal uses the default encoder and Meeting no longer carries a
+// youtube_id field.
+func (m *Meeting) UnmarshalJSON(data []byte) error {
+	type alias Meeting
+	aux := struct {
+		YouTubeID string `json:"youtube_id"`
+		*alias
+	}{
+		alias: (*alias)(m),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if m.VideoURL == "" && aux.YouTubeID != "" {
+		m.VideoURL = "https://www.youtube.com/watch?v=" + aux.YouTubeID
+	}
+	return nil
 }
 
 func (m *Meeting) QualifiedID() string {
@@ -266,12 +295,15 @@ func (db *Database) Save() error {
 	return os.WriteFile(db.path, data, 0o644)
 }
 
-// FindByYouTubeID returns the meeting with the given YouTube video ID, or nil.
-func (db *Database) FindByYouTubeID(ytID string) *Meeting {
+// FindByVideoURL returns the meeting with the given video URL, or nil.
+func (db *Database) FindByVideoURL(url string) *Meeting {
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	if url == "" {
+		return nil
+	}
 	for _, m := range db.Meetings {
-		if m.YouTubeID == ytID {
+		if m.VideoURL == url {
 			return m
 		}
 	}
@@ -279,14 +311,14 @@ func (db *Database) FindByYouTubeID(ytID string) *Meeting {
 }
 
 // Add adds a meeting to the database if it doesn't already exist.
-// A meeting is considered a duplicate if it has the same YouTube video ID or
+// A meeting is considered a duplicate if it has the same video URL or
 // the same meeting ID (date + body + session).
 // Returns true if the meeting was added (i.e. it was new).
 func (db *Database) Add(m *Meeting) bool {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	for _, existing := range db.Meetings {
-		if existing.YouTubeID == m.YouTubeID {
+		if m.VideoURL != "" && existing.VideoURL == m.VideoURL {
 			return false
 		}
 		if existing.InstanceSlug == m.InstanceSlug && existing.ID == m.ID {

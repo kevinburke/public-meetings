@@ -2,12 +2,46 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestMeetingUnmarshalLegacyYouTubeID(t *testing.T) {
+	const legacy = `{"id":"2026-02-03-city-council","youtube_id":"abc123","status":"complete"}`
+	var m Meeting
+	if err := json.Unmarshal([]byte(legacy), &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got, want := m.VideoURL, "https://www.youtube.com/watch?v=abc123"; got != want {
+		t.Errorf("VideoURL = %q, want %q", got, want)
+	}
+	// Re-marshal and confirm the legacy field is gone.
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(out), "youtube_id") {
+		t.Errorf("re-marshaled record still contains youtube_id: %s", out)
+	}
+	if !strings.Contains(string(out), `"video_url":"https://www.youtube.com/watch?v=abc123"`) {
+		t.Errorf("re-marshaled record missing video_url: %s", out)
+	}
+}
+
+func TestMeetingUnmarshalPrefersVideoURL(t *testing.T) {
+	const both = `{"id":"x","youtube_id":"abc","video_url":"https://vimeo.com/event/1"}`
+	var m Meeting
+	if err := json.Unmarshal([]byte(both), &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m.VideoURL != "https://vimeo.com/event/1" {
+		t.Errorf("VideoURL = %q, want vimeo URL", m.VideoURL)
+	}
+}
 
 func TestParseWhisperTS(t *testing.T) {
 	tests := []struct {

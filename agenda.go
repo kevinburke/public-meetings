@@ -111,12 +111,20 @@ func FetchAgendaURL(ctx context.Context, inst *InstanceConfig, meeting *Meeting)
 }
 
 // DownloadAgenda finds the agenda URL, downloads the HTML to var/artifacts/,
-// parses the agenda items, and stores the URL on the meeting.
+// parses the agenda items, and stores the URL on the meeting. Dispatches by
+// instance source — Granicus (YouTube instances) fetches via RSS lookup;
+// Highbond instances already have meeting.AgendaURL populated at discovery
+// time, so we just download the PDF.
 func DownloadAgenda(ctx context.Context, cfg *Config, meeting *Meeting) error {
 	inst, ok := cfg.InstanceForSlug(meeting.InstanceSlug)
 	if !ok {
 		return fmt.Errorf("unknown instance slug %q for meeting %s", meeting.InstanceSlug, meeting.ID)
 	}
+
+	if inst.Source == SourceHighbond {
+		return downloadHighbondAgenda(ctx, meeting)
+	}
+
 	agendaURL, err := FetchAgendaURL(ctx, inst, meeting)
 	if err != nil {
 		return err

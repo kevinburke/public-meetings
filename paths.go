@@ -10,6 +10,12 @@ func agendaHTMLPath(m *Meeting) string {
 	return filepath.Join(artifactsDir(m.InstanceSlug), m.ID+".html")
 }
 
+// agendaPDFPath is the local cache for Highbond agenda PDFs. The annotator
+// reads this and runs pdftohtml on it to recover the structured agenda items.
+func agendaPDFPath(m *Meeting) string {
+	return filepath.Join(artifactsDir(m.InstanceSlug), m.ID+".pdf")
+}
+
 func annotationJSONPath(m *Meeting) string {
 	return filepath.Join(artifactsDir(m.InstanceSlug), m.ID+"-annotations.json")
 }

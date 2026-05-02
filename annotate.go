@@ -30,23 +30,19 @@ type AgendaAnnotation struct {
 // AnnotateMeeting uses codex to match agenda items to transcript timestamps.
 // It writes the result to var/artifacts/<meeting-id>-annotations.json.
 func AnnotateMeeting(ctx context.Context, meeting *Meeting) error {
-	// Locate the agenda HTML and transcript VTT
-	agendaPath := agendaHTMLPath(meeting)
-	if _, err := os.Stat(agendaPath); err != nil {
-		return fmt.Errorf("agenda HTML not found at %s: download it first with 'process'", agendaPath)
-	}
-
 	if meeting.TranscriptPath == "" {
 		return fmt.Errorf("no transcript for meeting %s", meeting.ID)
 	}
 
-	// Parse agenda items
-	agendaItems, err := ParseAgendaHTML(agendaPath)
+	// Pick the right agenda parser by artifact: PDF (Highbond) wins
+	// over HTML (Granicus) when both are present, since the PDF carries
+	// more structural cues (numbered sub-items, hyperlinks).
+	agendaItems, err := LoadAgendaItems(ctx, meeting)
 	if err != nil {
 		return fmt.Errorf("parsing agenda: %w", err)
 	}
 	if len(agendaItems) == 0 {
-		return fmt.Errorf("no agenda items found in %s", agendaPath)
+		return fmt.Errorf("no agenda items found for meeting %s; run 'process' first", meeting.ID)
 	}
 
 	// Parse transcript

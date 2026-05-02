@@ -12,12 +12,27 @@ under `/walnut-creek/`.
 - Go 1.21+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - ffmpeg / ffprobe
-- A YouTube Data API v3 key
+- A YouTube Data API v3 key (only when any instance uses `source = "youtube"`)
+- `pdftohtml` + `pdftotext` from poppler-utils (only when any instance uses
+  `source = "highbond"`); on macOS via `brew install poppler`, on Debian/Ubuntu
+  via `apt install poppler-utils`
 - A Whisper engine — either [mlx-whisper] (macOS, Apple Silicon) or
   [whisper.cpp] (Linux/CPU); see [Transcription engines](#transcription-engines)
 
 [mlx-whisper]: https://github.com/ml-explore/mlx-examples/tree/main/whisper
 [whisper.cpp]: https://github.com/ggml-org/whisper.cpp
+
+## Meeting sources
+
+Each instance picks a discovery backend via `source`:
+
+| Source     | Video index           | Agenda                        | Required fields                          |
+| ---------- | --------------------- | ----------------------------- | ---------------------------------------- |
+| `youtube`  | YouTube Data API v3   | Granicus RSS feed             | `channel_handle`, `agenda_rss_url`       |
+| `highbond` | Diligent Community / iCompass portal scrape | Same portal — agenda PDF carries the Vimeo URL | `portal_base_url`, optional `meeting_types` |
+
+The `highbond` backend depends on `pdftohtml` and `pdftotext` (poppler-utils)
+to recover the Vimeo URL and structured agenda items from the PDF.
 
 ## Transcription engines
 
@@ -53,13 +68,24 @@ always be re-downloaded from YouTube if a re-transcription is ever needed.
    slug = "walnut-creek"
    name = "Walnut Creek"
    description = "Searchable transcripts of Walnut Creek city government meetings."
+   source = "youtube"
    channel_handle = "@WalnutCreekGov"
    agenda_rss_url = "https://walnutcreek.granicus.com/ViewPublisherRSS.php?view_id=12&mode=agendas"
+   time_zone = "America/Los_Angeles"
+
+   [[instances]]
+   slug = "walnut-creek-sd"
+   name = "Walnut Creek School District"
+   description = "Searchable transcripts of WCSD Governing Board meetings."
+   source = "highbond"
+   portal_base_url = "https://walnutcreeksd.community.highbond.com"
+   meeting_types = ["regular governing board", "closed session", "special meeting", "strategic planning"]
    time_zone = "America/Los_Angeles"
    ```
 
    Get a YouTube Data API key at https://console.cloud.google.com/apis/credentials
-   (enable "YouTube Data API v3" for your project first).
+   (enable "YouTube Data API v3" for your project first). The key is only
+   required when at least one instance uses `source = "youtube"`.
 
    Global optional fields with their defaults:
 

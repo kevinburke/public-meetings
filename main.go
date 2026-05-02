@@ -140,19 +140,11 @@ Flags:
 	fs.Parse(args)
 
 	cfg, db := loadConfigAndDB()
-	yt := NewYouTubeClient(cfg.YouTubeAPIKey)
 
 	since := time.Now().AddDate(0, 0, -*lookbackDays)
 	var newMeetings []*Meeting
 	for _, inst := range cfg.Instances {
-		channelID, err := yt.ResolveChannelID(ctx, inst.ChannelHandle)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error resolving channel for %s: %v\n", inst.Slug, err)
-			os.Exit(1)
-		}
-		slog.Info("resolved channel", "instance", inst.Slug, "handle", inst.ChannelHandle, "id", channelID)
-
-		found, err := CheckForNewMeetings(ctx, yt, &inst, channelID, db, since)
+		found, err := DiscoverMeetings(ctx, cfg, &inst, db, since)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error checking for new meetings for %s: %v\n", inst.Slug, err)
 			os.Exit(1)
@@ -388,9 +380,10 @@ Example:
 			if m.TranscriptPath == "" {
 				continue
 			}
-			agendaPath := agendaHTMLPath(m)
-			if _, err := os.Stat(agendaPath); err != nil {
-				continue
+			if _, err := os.Stat(agendaHTMLPath(m)); err != nil {
+				if _, err := os.Stat(agendaPDFPath(m)); err != nil {
+					continue
+				}
 			}
 			eligible = append(eligible, m)
 		}
@@ -455,7 +448,6 @@ Flags:
 	fs.Parse(args)
 
 	cfg, db := loadConfigAndDB()
-	yt := NewYouTubeClient(cfg.YouTubeAPIKey)
 
 	slog.Info("starting watcher", "interval", cfg.CheckInterval.Duration)
 
@@ -465,14 +457,7 @@ Flags:
 	for {
 		var totalNew int
 		for _, inst := range cfg.Instances {
-			channelID, err := yt.ResolveChannelID(ctx, inst.ChannelHandle)
-			if err != nil {
-				slog.Error("resolving channel", "instance", inst.Slug, "error", err)
-				continue
-			}
-			slog.Debug("resolved channel", "instance", inst.Slug, "handle", inst.ChannelHandle, "id", channelID)
-
-			newMeetings, err := CheckForNewMeetings(ctx, yt, &inst, channelID, db, since)
+			newMeetings, err := DiscoverMeetings(ctx, cfg, &inst, db, since)
 			if err != nil {
 				slog.Error("checking for new meetings", "instance", inst.Slug, "error", err)
 				continue

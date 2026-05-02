@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -141,11 +142,13 @@ h1 { font-size: 1.5em; }
 <h1>{{.Title}}</h1>
 <p>{{.DateFormatted}} &middot; {{.BodyName}}</p>
 
+{{if .Video.EmbedURL}}
 <div class="video-sticky">
 <div class="video-container">
-<iframe id="player" src="https://www.youtube.com/embed/{{.YouTubeID}}?enablejsapi=1" frameborder="0" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
+{{if eq .Video.Provider "youtube"}}<iframe id="player" src="{{.Video.EmbedURL}}?enablejsapi=1" frameborder="0" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>{{else if eq .Video.Provider "vimeo"}}<iframe id="player" src="{{.Video.EmbedURL}}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>{{end}}
 </div>
 </div>
+{{end}}
 
 {{if .AgendaURL}}
 <div class="agenda-link"><a href="{{.AgendaURL}}" target="_blank">View Meeting Agenda</a></div>
@@ -208,10 +211,20 @@ h1 { font-size: 1.5em; }
 
 <script>
 var player;
+var videoProvider = {{.Video.Provider}};
 var tag = document.createElement('script');
-tag.src = "https://www.youtube.com/iframe_api";
-var firstScriptTag = document.getElementsByTagName('script')[0];
-firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+if (videoProvider === "youtube") {
+    tag.src = "https://www.youtube.com/iframe_api";
+    var firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+} else if (videoProvider === "vimeo") {
+    tag.src = "https://player.vimeo.com/api/player.js";
+    tag.onload = function() {
+        var iframe = document.getElementById('player');
+        if (iframe) { player = new Vimeo.Player(iframe); }
+    };
+    document.head.appendChild(tag);
+}
 
 function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
@@ -220,9 +233,13 @@ function onYouTubeIframeAPIReady() {
 }
 
 function seekTo(seconds) {
-    if (player && player.seekTo) {
+    if (!player) { return; }
+    if (videoProvider === "youtube" && player.seekTo) {
         player.seekTo(seconds, true);
         player.playVideo();
+    } else if (videoProvider === "vimeo" && player.setCurrentTime) {
+        player.setCurrentTime(seconds);
+        player.play();
     }
 }
 
@@ -339,7 +356,7 @@ type meetingPageData struct {
 	Title          string
 	DateFormatted  string
 	BodyName       string
-	YouTubeID      string
+	Video          VideoEmbed
 	AgendaURL      string
 	MeetingSummary string
 	AgendaItems    []templateAgendaItem
@@ -410,12 +427,13 @@ func GenerateSite(cfg *Config, db *Database) error {
 }
 
 func generateMeetingPage(outDir string, inst *InstanceConfig, m *Meeting) error {
+	embed, _ := VideoEmbedFor(m.VideoURL)
 	data := meetingPageData{
 		InstanceName:  inst.Name,
 		Title:         m.Title,
 		DateFormatted: m.Date.Format("January 2, 2006"),
 		BodyName:      m.Body.DisplayName(),
-		YouTubeID:     m.YouTubeID,
+		Video:         embed,
 		AgendaURL:     m.AgendaURL,
 	}
 
@@ -425,8 +443,9 @@ func generateMeetingPage(outDir string, inst *InstanceConfig, m *Meeting) error 
 		data.MeetingSummary = result.MeetingSummary
 	}
 
-	// Load parsed agenda items if the HTML is available
-	if agendaItems, err := ParseAgendaHTML(agendaHTMLPath(m)); err == nil {
+	// Load parsed agenda items via the source-agnostic loader. Errors
+	// are non-fatal — the page still renders without the agenda block.
+	if agendaItems, _ := LoadAgendaItems(context.Background(), m); agendaItems != nil {
 		for _, item := range agendaItems {
 			if item.Description == "" && len(item.Documents) == 0 {
 				continue // skip items with no content beyond the title
