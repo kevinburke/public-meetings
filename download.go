@@ -15,7 +15,11 @@ import (
 )
 
 // Errors from yt-dlp that indicate the video is not available and retrying
-// won't help.
+// won't help. The Vimeo "scheduled for" message specifically covers a
+// future-dated live event whose URL we already learned about from the
+// agenda PDF — the download will succeed on a later discovery cycle once
+// the stream goes live, so there's no point burning the local retry
+// budget on it now.
 var noRetryErrors = []string{
 	"live event will begin in",
 	"Premieres in",
@@ -24,6 +28,7 @@ var noRetryErrors = []string{
 	"Private video",
 	"This video has been removed",
 	"Sign in to confirm your age",
+	"This live event is scheduled for",
 }
 
 // projectRoot returns the root of the git repository, or the directory of the
