@@ -120,7 +120,8 @@ h1 { font-size: 1.5em; }
 .section-header { margin: 1.5em 0 0.5em; padding: 8px 12px; background: #e3f2fd; border-left: 4px solid #1565c0; border-radius: 0 4px 4px 0; font-weight: 600; font-size: 1.05em; scroll-margin-top: 290px; }
 .cue { padding: 4px 0; display: flex; gap: 12px; border-bottom: 1px solid #f0f0f0; }
 .cue:hover { background: #f9f9f9; }
-.cue-time { flex-shrink: 0; width: 80px; color: #0066cc; cursor: pointer; font-family: monospace; font-size: 0.9em; padding-top: 2px; }
+.cue-time { flex-shrink: 0; width: 80px; color: #0066cc; cursor: pointer; font-family: monospace; font-size: 0.9em; padding-top: 2px; user-select: none; }
+.cue-time::before { content: attr(data-time); }
 .cue-time:hover { text-decoration: underline; }
 .cue-text { flex: 1; }
 .toc { margin: 1.5em 0; padding: 15px 20px; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 5px; }
@@ -202,7 +203,7 @@ h1 { font-size: 1.5em; }
 <div class="section-header" id="{{.SectionID}}">{{.SectionTitle}}</div>
 {{end}}
 <div class="cue" data-start="{{.StartSeconds}}">
-<span class="cue-time" onclick="seekTo({{.StartSeconds}})">{{.StartTimestamp}}</span>
+<span class="cue-time" data-time="{{.StartTimestamp}}" onclick="seekTo({{.StartSeconds}})"></span>
 <span class="cue-text">{{.Text}}</span>
 </div>
 {{end}}
