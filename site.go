@@ -503,8 +503,15 @@ func generateMeetingPage(outDir string, inst *InstanceConfig, m *Meeting) error 
 }
 
 func generateIndexPage(outDir string, inst *InstanceConfig, meetings []*Meeting) error {
-	bodyOrder := []MeetingBody{CityCouncil, PlanningCommission, DesignReviewCommission, TransportationCommission}
+	// Group by body, collecting body keys in first-seen order so the
+	// rendered index sections appear in "most recently active body
+	// first" order (the meetings slice is sorted date-desc upstream).
+	// Driving the order from the data rather than a hardcoded slice
+	// means new MeetingBody constants light up automatically — which is
+	// how the SchoolBoard body managed to silently drop off the index
+	// when it was first added.
 	grouped := make(map[MeetingBody][]indexMeetingData)
+	var bodyOrder []MeetingBody
 
 	for _, m := range meetings {
 		if m.InstanceSlug != inst.Slug {
@@ -512,6 +519,9 @@ func generateIndexPage(outDir string, inst *InstanceConfig, meetings []*Meeting)
 		}
 		if m.Status != StatusTranscribed && m.Status != StatusComplete {
 			continue
+		}
+		if _, seen := grouped[m.Body]; !seen {
+			bodyOrder = append(bodyOrder, m.Body)
 		}
 		entry := indexMeetingData{
 			DateFormatted: m.Date.Format("Jan 2, 2006"),
@@ -526,14 +536,12 @@ func generateIndexPage(outDir string, inst *InstanceConfig, meetings []*Meeting)
 		grouped[m.Body] = append(grouped[m.Body], entry)
 	}
 
-	var bodies []indexBodyData
+	bodies := make([]indexBodyData, 0, len(bodyOrder))
 	for _, b := range bodyOrder {
-		if ms, ok := grouped[b]; ok && len(ms) > 0 {
-			bodies = append(bodies, indexBodyData{
-				Name:     b.DisplayName(),
-				Meetings: ms,
-			})
-		}
+		bodies = append(bodies, indexBodyData{
+			Name:     b.DisplayName(),
+			Meetings: grouped[b],
+		})
 	}
 
 	data := indexPageData{
